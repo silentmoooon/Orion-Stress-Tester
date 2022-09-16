@@ -1,11 +1,5 @@
 package org.mirrentools.ost;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.NoSuchFileException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-
 import io.netty.util.internal.logging.InternalLoggerFactory;
 import io.netty.util.internal.logging.Log4J2LoggerFactory;
 import io.vertx.core.DeploymentOptions;
@@ -13,6 +7,12 @@ import io.vertx.core.Launcher;
 import io.vertx.core.Vertx;
 import io.vertx.core.VertxOptions;
 import io.vertx.core.json.JsonObject;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 
 /**
  * 启动器
@@ -79,7 +79,7 @@ public class MainLauncher extends Launcher {
 	 */
 	public void beforeDeployingVerticle(DeploymentOptions deploymentOptions) {
 		String root = System.getProperty("user.dir");
-		Path path = Paths.get(root, "data", "config.json");
+		Path path = Paths.get(root, "config", "config.json");
 		byte[] bs;
 		try {
 			bs = Files.readAllBytes(path);

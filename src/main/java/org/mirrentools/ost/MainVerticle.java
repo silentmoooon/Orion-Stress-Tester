@@ -1,21 +1,19 @@
 package org.mirrentools.ost;
 
-import java.net.MalformedURLException;
-import java.net.URI;
-import java.net.URL;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
-
-import org.mirrentools.ost.common.CommandUtil;
-import org.mirrentools.ost.common.Constant;
-import org.mirrentools.ost.common.JvmMetricsUtil;
-import org.mirrentools.ost.common.LocalDataBoolean;
-import org.mirrentools.ost.common.LocalDataCounter;
-import org.mirrentools.ost.common.LocalDataRequestOptions;
-import org.mirrentools.ost.common.LocalDataServerWebSocket;
-import org.mirrentools.ost.common.LocalDataVertx;
-import org.mirrentools.ost.common.ResultFormat;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.vertx.core.*;
+import io.vertx.core.buffer.Buffer;
+import io.vertx.core.http.*;
+import io.vertx.core.json.JsonArray;
+import io.vertx.core.json.JsonObject;
+import io.vertx.core.logging.Logger;
+import io.vertx.core.logging.LoggerFactory;
+import io.vertx.core.net.*;
+import io.vertx.ext.web.Router;
+import io.vertx.ext.web.handler.StaticHandler;
+import io.vertx.micrometer.MetricsService;
+import io.vertx.micrometer.MicrometerMetricsOptions;
+import org.mirrentools.ost.common.*;
 import org.mirrentools.ost.enums.OstCommand;
 import org.mirrentools.ost.enums.OstRequestType;
 import org.mirrentools.ost.enums.OstSslCertType;
@@ -27,37 +25,16 @@ import org.mirrentools.ost.verticle.OstHttpVerticle;
 import org.mirrentools.ost.verticle.OstTcpVerticle;
 import org.mirrentools.ost.verticle.OstWebSocketVerticle;
 
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import io.vertx.core.AbstractVerticle;
-import io.vertx.core.AsyncResult;
-import io.vertx.core.DeploymentOptions;
-import io.vertx.core.Future;
-import io.vertx.core.Handler;
-import io.vertx.core.MultiMap;
-import io.vertx.core.Promise;
-import io.vertx.core.Vertx;
-import io.vertx.core.VertxOptions;
-import io.vertx.core.buffer.Buffer;
-import io.vertx.core.http.HttpClient;
-import io.vertx.core.http.HttpClientOptions;
-import io.vertx.core.http.HttpClientResponse;
-import io.vertx.core.http.HttpMethod;
-import io.vertx.core.http.ServerWebSocket;
-import io.vertx.core.http.WebsocketVersion;
-import io.vertx.core.json.JsonArray;
-import io.vertx.core.json.JsonObject;
-import io.vertx.core.logging.Logger;
-import io.vertx.core.logging.LoggerFactory;
-import io.vertx.core.net.JksOptions;
-import io.vertx.core.net.NetClient;
-import io.vertx.core.net.NetClientOptions;
-import io.vertx.core.net.PemKeyCertOptions;
-import io.vertx.core.net.PfxOptions;
-import io.vertx.core.net.SocketAddress;
-import io.vertx.ext.web.Router;
-import io.vertx.ext.web.handler.StaticHandler;
-import io.vertx.micrometer.MetricsService;
-import io.vertx.micrometer.MicrometerMetricsOptions;
+import java.io.IOException;
+import java.net.MalformedURLException;
+import java.net.URI;
+import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 
 /**
  * <pre>
@@ -82,97 +59,117 @@ import io.vertx.micrometer.MicrometerMetricsOptions;
  * 程序入口
  * Main
  * </pre>
- * 
+ *
  * @author <a href="https://mirrentools.org/">Mirren</a>
  * @date 2019-02-14
  */
 public class MainVerticle extends AbstractVerticle {
-	/** 日志 */
-	private final Logger LOG = LoggerFactory.getLogger(MainVerticle.class);
-	/** GC overhead limit exceeded */
-	private boolean gcOverheadLimit = false;
-	/** 实例的数量 */
-	private int instances;
+    /**
+     * 日志
+     */
+    private final Logger LOG = LoggerFactory.getLogger(MainVerticle.class);
+    /**
+     * GC overhead limit exceeded
+     */
+    private boolean gcOverheadLimit = false;
+    /**
+     * 实例的数量
+     */
+    private int instances;
 
-	/**
-	 * IDE中启动的Main
-	 * 
-	 * @param args
-	 */
-	public static void main(String[] args) {
-		MainLauncher.start();
-	}
+    /**
+     * IDE中启动的Main
+     *
+     * @param args
+     */
+    public static void main(String[] args) {
+        MainLauncher.start();
+    }
 
-	@Override
-	public void start(Promise<Void> startPromise) throws Exception {
-		instances = config().getInteger("instances", JvmMetricsUtil.availableProcessors());
-		Integer port = config().getInteger("httpPort", 7090);
-		Router router = Router.router(vertx);
-		router.route().handler(StaticHandler.create("webroot").setDefaultContentEncoding("UTF-8"));
-		vertx.createHttpServer().requestHandler(router).webSocketHandler(socket -> {
-			SocketAddress address = socket.remoteAddress();
-			if (LOG.isDebugEnabled()) {
-				LOG.debug(address.host() + ":" + address.port() + socket.path() + " -->连接控制台成功!");
-			}
-			if (socket.query() != null) {
-				if (LOG.isDebugEnabled()) {
-					LOG.debug("\"query: \" + socket.query()");
-				}
-			}
-			if (gcOverheadLimit) {
-				String failed = ResultFormat.failed(OstCommand.GC_OVERHEAD_LIMIT, "The task exceeds the processing capacity of the console. please set the startup parameter to increase the JVM memory", "");
-				socket.writeTextMessage(failed);
-				socket.end();
-				return;
-			}
-			// 关闭或结束时清理请求
-			Promise<String> clearRequest = Promise.promise();
-			clearRequest.future().setHandler(res -> {
-				String id = res.result();
-				LocalDataServerWebSocket.remove(id);
-				LocalDataRequestOptions.remove(id);
-				LocalDataCounter.remove(id);
-				LocalDataBoolean.remove(id);
-				Vertx remove = LocalDataVertx.remove(id);
-				if (remove != null) {
-					Set<String> deploymentIDs = remove.deploymentIDs();
-					for (String did : deploymentIDs) {
-						remove.undeploy(did);
-					}
-					remove.close(close -> {
-						if (close.failed()) {
-							LOG.error("关闭WebSocket->关闭测试服务->" + id + "-->异常", close.cause());
-						} else {
-							if (LOG.isDebugEnabled()) {
-								LOG.debug("关闭WebSocket->关闭测试服务->" + id + "-->成功");
-							}
-						}
-					});
-				}
-			});
-			// 处理用户的信息
-			socket.handler(buf -> {
-				try {
-					JsonObject body = new JsonObject(buf);
-					if (LOG.isDebugEnabled()) {
-						LOG.debug("收到用户请求:" + body);
-					}
-					Integer code = body.getInteger(Constant.CODE);
-					if (code.equals(OstCommand.CANCEL.value())) {
-						clearRequest.tryComplete(socket.textHandlerID());
-						socket.end();
-					} else if (code.equals(OstCommand.SUBMIT_TEST.value())) {
-						JsonObject data = body.getJsonObject(Constant.DATA);
-						checkAndLoadRequestOptions(data, res -> {
-							if (res.succeeded()) {
-								// 检查与装载数据成功,提交测试任务
-								OstRequestOptions options = res.result();
-								String id = socket.textHandlerID();
-								options.setId(id);
-								if (LOG.isDebugEnabled()) {
-									LOG.debug("加载并检查请求参数-->成功:" + options);
-								}
-								vertx.setPeriodic(1000, tid -> {
+    @Override
+    public void start(Promise<Void> startPromise) throws Exception {
+        instances = config().getInteger("instances", JvmMetricsUtil.availableProcessors());
+        int mode = config().getInteger("mode", 0);
+        if (mode == 0) {
+            startWithCmd(startPromise);
+        } else {
+            startWithWeb(startPromise);
+        }
+
+
+    }
+
+    private void startWithWeb(Promise<Void> startPromise) {
+
+        Integer port = config().getInteger("httpPort", 7090);
+        Router router = Router.router(vertx);
+        router.route().handler(StaticHandler.create("webroot").setDefaultContentEncoding("UTF-8"));
+        vertx.createHttpServer().requestHandler(router).webSocketHandler(socket -> {
+            SocketAddress address = socket.remoteAddress();
+            if (LOG.isDebugEnabled()) {
+                LOG.debug(address.host() + ":" + address.port() + socket.path() + " -->连接控制台成功!");
+            }
+            if (socket.query() != null) {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("\"query: \" + socket.query()");
+                }
+            }
+            if (gcOverheadLimit) {
+                String failed = ResultFormat.failed(OstCommand.GC_OVERHEAD_LIMIT, "The task exceeds the processing capacity of the console. please set the startup parameter to increase the JVM memory", "");
+                socket.writeTextMessage(failed);
+                socket.end();
+                return;
+            }
+            // 关闭或结束时清理请求
+            Promise<String> clearRequest = Promise.promise();
+            clearRequest.future().setHandler(res -> {
+                String id = res.result();
+                System.out.println("close:" + id);
+                LocalDataServerWebSocket.remove(id);
+                LocalDataRequestOptions.remove(id);
+                LocalDataCounter.remove(id);
+                LocalDataBoolean.remove(id);
+                Vertx remove = LocalDataVertx.remove(id);
+                if (remove != null) {
+                    Set<String> deploymentIDs = remove.deploymentIDs();
+                    for (String did : deploymentIDs) {
+                        remove.undeploy(did);
+                    }
+                    remove.close(close -> {
+                        if (close.failed()) {
+                            LOG.error("关闭WebSocket->关闭测试服务->" + id + "-->异常", close.cause());
+                        } else {
+                            if (LOG.isDebugEnabled()) {
+                                LOG.debug("关闭WebSocket->关闭测试服务->" + id + "-->成功");
+                            }
+                        }
+                    });
+                }
+            });
+            // 处理用户的信息
+            socket.handler(buf -> {
+                try {
+                    JsonObject body = new JsonObject(buf);
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("收到用户请求:" + body);
+                    }
+                    Integer code = body.getInteger(Constant.CODE);
+                    if (code.equals(OstCommand.CANCEL.value())) {
+                        clearRequest.tryComplete(socket.textHandlerID());
+                        socket.end();
+                    } else if (code.equals(OstCommand.SUBMIT_TEST.value())) {
+                        JsonObject data = body.getJsonObject(Constant.DATA);
+                        checkAndLoadRequestOptions(data, res -> {
+                            if (res.succeeded()) {
+                                // 检查与装载数据成功,提交测试任务
+                                OstRequestOptions options = res.result();
+                                String id = socket.textHandlerID();
+                                System.out.println("deploy:" + id);
+                                options.setId(id);
+                                if (LOG.isDebugEnabled()) {
+                                    LOG.debug("加载并检查请求参数-->成功:" + options);
+                                }
+								/*vertx.setPeriodic(1000, tid -> {
 									if (socket.isClosed()) {
 										vertx.cancelTimer(tid);
 										return;
@@ -185,446 +182,610 @@ public class MainVerticle extends AbstractVerticle {
 									LOG.info("执行发送信息给客户端-->当前服务器性能:" + result);
 									String metrics = ResultFormat.success(OstCommand.JVM_METRIC, result);
 									socket.writeTextMessage(metrics);
-								});
-								submitTest(options, socket);
-								// 设置Socket关闭事件
-								socket.endHandler(end -> {
-									clearRequest.tryComplete(socket.textHandlerID());
-								});
-							} else {
-								if (LOG.isDebugEnabled()) {
-									LOG.debug("加载并检查请求参数-->失败:", res.cause());
-								}
-								socket.writeTextMessage(ResultFormat.failed(OstCommand.MISSING_PARAMETER, res.cause().getMessage(), buf.toString()));
-							}
-						});
-					} else {
-						socket.writeTextMessage(ResultFormat.failed(OstCommand.MISSING_PARAMETER, "请求失败,无效的操作指令!", buf.toString()));
-					}
-				} catch (Exception e) {
-					LOG.error("解析用户请求-->失败:" + buf);
-					socket.writeTextMessage(ResultFormat.failed(OstCommand.MISSING_PARAMETER, "请求失败,存在无效的数据!", buf.toString()));
-				}
-			});
-		}).listen(port, res -> {
-			if (res.succeeded()) {
-				System.out.println("Orion-Stress-Tester running http://127.0.0.1:" + port);
-				try {
-					CommandUtil.browse(new URI("http://127.0.0.1:" + port));
-				} catch (Exception e) {
-					if (LOG.isDebugEnabled()) {
-						LOG.debug("执行打开默认浏览器失败:", e);
-					}
-				}
-				startPromise.complete();
-			} else {
-				LOG.error("Orion-Stress-Tester start failed. If the port is occupied, you can modify the httpport of data/config.json");
-				startPromise.fail(res.cause());
-			}
-		});
+								});*/
+                                submitTest(options, socket);
+                                // 设置Socket关闭事件
+                                socket.endHandler(end -> {
+                                    System.out.println("clearRequest:" + socket.textHandlerID());
+                                    clearRequest.tryComplete(socket.textHandlerID());
+                                });
+                            } else {
+                                if (LOG.isDebugEnabled()) {
+                                    LOG.debug("加载并检查请求参数-->失败:", res.cause());
+                                }
+                                socket.writeTextMessage(ResultFormat.failed(OstCommand.MISSING_PARAMETER, res.cause().getMessage(), buf.toString()));
+                            }
+                        });
+                    } else {
+                        socket.writeTextMessage(ResultFormat.failed(OstCommand.MISSING_PARAMETER, "请求失败,无效的操作指令!", buf.toString()));
+                    }
+                } catch (Exception e) {
+                    LOG.error("解析用户请求-->失败:" + buf);
+                    socket.writeTextMessage(ResultFormat.failed(OstCommand.MISSING_PARAMETER, "请求失败,存在无效的数据!", buf.toString()));
+                }
+            });
+        }).listen(port, res -> {
+            if (res.succeeded()) {
+                System.out.println("Orion-Stress-Tester running http://127.0.0.1:" + port);
+                try {
+                    CommandUtil.browse(new URI("http://127.0.0.1:" + port));
+                } catch (Exception e) {
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("执行打开默认浏览器失败:", e);
+                    }
+                }
+                startPromise.complete();
+            } else {
+                LOG.error("Orion-Stress-Tester start failed. If the port is occupied, you can modify the httpport of data/config.json");
+                startPromise.fail(res.cause());
+            }
+        });
+    }
 
-	}
+    private void startWithCmd(Promise<Void> startPromise) {
+        byte[] bs;
+        try {
+            String root = System.getProperty("user.dir");
+            Path path = Paths.get(root, "task", "task.json");
+            bs = Files.readAllBytes(path);
+            JsonObject data = new JsonObject(new String(bs));
+            checkAndLoadRequestOptions(data, res -> {
+                if (res.succeeded()) {
+                    // 检查与装载数据成功,提交测试任务
+                    OstRequestOptions options = res.result();
+                    String id = String.valueOf(System.currentTimeMillis());
+                    options.setId(id);
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("加载并检查请求参数-->成功:" + options);
+                    }
+					/*vertx.setPeriodic(1000, tid -> {
 
-	/**
-	 * 提交测试请求
-	 * 
-	 * @param options
-	 */
-	private void submitTest(OstRequestOptions options, ServerWebSocket socket) {
-		checkRequest(options, res -> {
-			if (res.succeeded()) {
-				if (LOG.isDebugEnabled()) {
-					LOG.debug("检查请求是否可用-->结果:成功!");
-				}
-				String result = ResultFormat.success(OstCommand.BEFORE_REQUEST_TEST, 1);
-				socket.writeTextMessage(result);
-				// 请求的id
-				String optionsId = socket.textHandlerID();
-				// 存储需要请求的数量
-				LocalDataCounter.newCounter(optionsId, (options.getAverage() * options.getCount()));
-				// 共享WebSocket
-				LocalDataServerWebSocket.put(optionsId, socket);
-				// 共享请求配置
-				LocalDataRequestOptions.put(optionsId, options);
-				// 开启测试
-				startTest(options, socket);
-			} else {
-				if (LOG.isDebugEnabled()) {
-					LOG.debug("检查请求是否可用-->结果:失败:", res.cause());
-				}
-				if (socket.isClosed()) {
-					return;
-				}
-				String result = ResultFormat.failed(OstCommand.BEFORE_REQUEST_TEST, res.cause().getMessage(), 0);
-				socket.writeTextMessage(result);
-				socket.end();
-			}
-		});
-	}
+						JsonObject result = new JsonObject();
+						result.put("processors", JvmMetricsUtil.availableProcessors());
+						result.put("totalMemory", JvmMetricsUtil.totalMemory());
+						result.put("maxMemory", JvmMetricsUtil.maxMemory());
+						result.put("freeMemory", JvmMetricsUtil.freeMemory());
+						LOG.info("执行发送信息给客户端-->当前服务器性能:" + result);
+						String metrics = ResultFormat.success(OstCommand.JVM_METRIC, result);
+						System.out.println(metrics);
+					});*/
+                    submitTest(options);
 
-	/**
-	 * 启动测试服务
-	 * 
-	 * @param options
-	 *          请求的配置
-	 * @param socket
-	 *          Socket
-	 */
-	private void startTest(OstRequestOptions options, ServerWebSocket socket) {
+                } else {
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("加载并检查请求参数-->失败:", res.cause());
+                    }
+                    System.err.println("加载并检查请求参数-->失败:");
+                    System.exit(0);
 
-		// 测试服务的名称
-		String testName;
-		// 测试镜像的名称
-		String snapshotName;
-		// 要启动的服务名称
-		String verticleName;
-		// 请求的总数量
-		long requestTotal;
-		if (options.getType() == OstRequestType.TCP) {
-			testName = "TCP";
-			snapshotName = "vertx.net";
-			verticleName = OstTcpVerticle.class.getName();
-			requestTotal = options.getCount();
-		} else if (options.getType() == OstRequestType.WebSocket) {
-			testName = "WebSocket";
-			snapshotName = "vertx.http";
-			verticleName = OstWebSocketVerticle.class.getName();
-			requestTotal = options.getCount();
-		} else {
-			testName = "HTTP";
-			snapshotName = "vertx.http";
-			verticleName = OstHttpVerticle.class.getName();
-			requestTotal = (options.getCount() * options.getAverage());
-		}
+                }
+            });
 
-		MicrometerMetricsOptions metricsOptions = new MicrometerMetricsOptions().setEnabled(true);
-		metricsOptions.setMicrometerRegistry(new SimpleMeterRegistry());
-		VertxOptions vertxOptions = new VertxOptions().setMetricsOptions(metricsOptions);
-		if ((options.getCount() > 100 || options.getInterval() > 1000 * 150) && instances < 100) {
-			vertxOptions.setWorkerPoolSize(100);
-		}
-		vertxOptions.setBlockedThreadCheckInterval(1000 * 60 * 60);
-		Vertx newVertx = Vertx.vertx(vertxOptions);
-		newVertx.exceptionHandler(err -> {
-			if ("GC overhead limit exceeded".equals(err.getMessage())) {
-				Set<String> iDs = newVertx.deploymentIDs();
-				for (String did : iDs) {
-					newVertx.undeploy(did);
-				}
-				gcOverheadLimit = true;
-				String msg = ResultFormat.failed(OstCommand.ERROR, "The task exceeds the processing capacity of the console. please set the startup parameter to increase the JVM memory", err.getMessage());
-				LOG.info("执行控制台超过GC开销已停止工作,请重启软件并调大JVM内存!");
-				if (socket != null && !socket.isClosed()) {
-					socket.writeTextMessage(msg);
-					socket.close();
-				}
-			}
-		});
-		LocalDataVertx.put(options.getId(), newVertx);
-		JsonObject config = new JsonObject().put("optionsId", options.getId());
-		DeploymentOptions deployments = new DeploymentOptions();
-		deployments.setInstances(instances);
-		deployments.setConfig(config);
-		if (LOG.isDebugEnabled()) {
-			LOG.debug("正在启动" + testName + "测试服务:" + deployments.toJson());
-		}
-		Promise<String> promise = Promise.promise();
-		promise.future().setHandler(h -> {
-			MetricsService service = MetricsService.create(newVertx);
-			vertx.setPeriodic(1000, tid -> {
-				if (socket.isClosed()) {
-					vertx.cancelTimer(tid);
-					return;
-				}
-				JsonObject snapshot = service.getMetricsSnapshot(snapshotName);
-				long succeeded = LocalDataCounter.getCount(Constant.REQUEST_SUCCEEDED_PREFIX + options.getId());
-				long failed = LocalDataCounter.getCount(Constant.REQUEST_FAILED_PREFIX + options.getId());
-				long endSum = (succeeded + failed);
-				snapshot.put("succeeded", succeeded);
-				snapshot.put("failed", failed);
-				socket.writeTextMessage(ResultFormat.success(OstCommand.TEST_RESPONSE, snapshot), writed -> {
-					if (endSum >= requestTotal) {
-						JsonObject metrics = service.getMetricsSnapshot(snapshotName);
-						metrics.put("succeeded", succeeded);
-						metrics.put("failed", failed);
-						String msg = ResultFormat.success(OstCommand.TEST_RESPONSE, metrics);
-						if (LOG.isDebugEnabled()) {
-							LOG.debug("执行" + testName + "测试->完成-->结果:" + metrics);
-						}
-						socket.writeTextMessage(msg, mwend -> {
-							String end = ResultFormat.success(OstCommand.TEST_COMPLETE, 1);
-							socket.writeTextMessage(end, ended -> {
-								socket.end();
-							});
-						});
-					} else {
-						LOG.info("执行发送信息给客户端-->已请求数量: " + endSum + " / " + requestTotal);
-					}
-				});
-			});
-		});
+            startPromise.complete();
+        } catch (IOException e) {
+            System.err.println("任务配置文件读取失败");
+            System.exit(0);
+        }
+    }
 
-		newVertx.deployVerticle(verticleName, deployments, res -> {
-			if (res.succeeded()) {
-				if (LOG.isDebugEnabled()) {
-					LOG.debug("启动" + testName + "测试服务-->成功!");
-				}
-				promise.complete();
-			} else {
-				LOG.error("启动" + testName + "测试服务-->失败:", res.cause());
-				String result = ResultFormat.failed(OstCommand.ERROR, res.cause().getMessage(), 0);
-				socket.writeTextMessage(result);
-				socket.end();
-			}
-		});
-	}
+    /**
+     * 提交测试请求
+     *
+     * @param options
+     */
+    private void submitTest(OstRequestOptions options, ServerWebSocket socket) {
+        checkRequest(options, res -> {
+            if (res.succeeded()) {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("检查请求是否可用-->结果:成功!");
+                }
+                String result = ResultFormat.success(OstCommand.BEFORE_REQUEST_TEST, 1);
+                socket.writeTextMessage(result);
+                // 请求的id
+                String optionsId = socket.textHandlerID();
+                // 存储需要请求的数量
+                LocalDataCounter.newCounter(optionsId, (options.getAverage() * options.getCount()));
+                // 共享WebSocket
+                LocalDataServerWebSocket.put(optionsId, socket);
+                // 共享请求配置
+                LocalDataRequestOptions.put(optionsId, options);
+                // 开启测试
+                startTest(options, socket);
+            } else {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("检查请求是否可用-->结果:失败:", res.cause());
+                }
+                if (socket.isClosed()) {
+                    return;
+                }
+                String result = ResultFormat.failed(OstCommand.BEFORE_REQUEST_TEST, res.cause().getMessage(), 0);
+                socket.writeTextMessage(result);
+                socket.end();
+            }
+        });
+    }
 
-	/**
-	 * 检查请求是否有效
-	 * 
-	 * @param options
-	 *          请求的配置
-	 * @param handler
-	 *          失败返回错误提示信息
-	 */
-	private void checkRequest(OstRequestOptions options, Handler<AsyncResult<Void>> handler) {
-		try {
-			OstRequestType type = options.getType();
-			HttpClientOptions hOptions = new HttpClientOptions();
-			if (options.getCert() != null && options.getCert() != OstSslCertType.DEFAULT) {
-				if (OstSslCertType.PFX == options.getCert()) {
-					PfxOptions certOptions = new PfxOptions();
-					certOptions.setPassword(options.getCertKey());
-					certOptions.setValue(Buffer.buffer(options.getCertValue()));
-					hOptions.setPfxKeyCertOptions(certOptions);
-				} else if (OstSslCertType.JKS == options.getCert()) {
-					JksOptions certOptions = new JksOptions();
-					certOptions.setPassword(options.getCertKey());
-					certOptions.setValue(Buffer.buffer(options.getCertValue()));
-					hOptions.setKeyStoreOptions(certOptions);
-				} else {
-					PemKeyCertOptions certOptions = new PemKeyCertOptions();
-					certOptions.setKeyValue(Buffer.buffer(options.getCertKey()));
-					certOptions.setCertValue(Buffer.buffer(options.getCertValue()));
-					hOptions.setPemKeyCertOptions(certOptions);
-				}
-			}
+    private void submitTest(OstRequestOptions options) {
+        checkRequest(options, res -> {
+            if (res.succeeded()) {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("检查请求是否可用-->结果:成功!");
+                }
+                String result = ResultFormat.success(OstCommand.BEFORE_REQUEST_TEST, 1);
+                // 请求的id
+                String optionsId = options.getId();
+                // 存储需要请求的数量
+                LocalDataCounter.newCounter(optionsId, (options.getAverage() * options.getCount()));
 
-			if (type == OstRequestType.HTTP) {
-				HttpClient httpClient = vertx.createHttpClient(hOptions);
-				if (LOG.isDebugEnabled()) {
-					LOG.debug("进行测试前请求正在检查HTTP后端服务是否可用...");
-				}
-				OstHttpRequestHandler.requestAbs(httpClient, options, res -> {
-					if (res.succeeded()) {
-						HttpClientResponse result = res.result();
-						int code = result.statusCode();
-						if (LOG.isDebugEnabled()) {
-							LOG.debug("进行测试前请求检查->HTTP-->结果:" + code);
-						}
-						if (code >= 200 && code < 300) {
-							handler.handle(Future.succeededFuture());
-						} else {
-							handler.handle(Future.failedFuture("进行测试前请求检查失败:返回了无效的状态码: " + code));
-						}
-					} else {
-						String msg = res.cause().getMessage();
-						if (LOG.isDebugEnabled()) {
-							LOG.debug("进行测试前请求检查->HTTP-->失败:", res);
-						}
-						handler.handle(Future.failedFuture("进行测试前请求检查失败:" + msg));
-					}
-				});
+                // 共享请求配置
+                LocalDataRequestOptions.put(optionsId, options);
+                // 开启测试
+                startTest(options);
+            } else {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("检查请求是否可用-->结果:失败:", res.cause());
+                }
+                System.exit(0);
+            }
+        });
+    }
 
-			} else if (type == OstRequestType.WebSocket) {
-				HttpClient httpClient = vertx.createHttpClient(hOptions);
-				OstWebSocketRequestHandler.requestAbs(httpClient, options, res -> {
-					if (LOG.isDebugEnabled()) {
-						LOG.debug("进行测试前请求检查->WebSocket-->成功!");
-					}
-					handler.handle(Future.succeededFuture());
-				}, err -> {
-					if (LOG.isDebugEnabled()) {
-						LOG.debug("进行测试前请求检查->WebSocket-->失败:", err);
-					}
-					String msg = err.getMessage();
-					handler.handle(Future.failedFuture("进行测试前请求检查失败:" + msg));
-				});
-			} else if (type == OstRequestType.TCP) {
-				NetClientOptions cOption = new NetClientOptions();
-				if (options.getCert() != null) {
-					if (options.getCert() != OstSslCertType.DEFAULT) {
-						if (OstSslCertType.PFX == options.getCert()) {
-							PfxOptions certOptions = new PfxOptions();
-							certOptions.setPassword(options.getCertKey());
-							certOptions.setValue(Buffer.buffer(options.getCertValue()));
-							cOption.setPfxKeyCertOptions(certOptions);
-						} else if (OstSslCertType.JKS == options.getCert()) {
-							JksOptions certOptions = new JksOptions();
-							certOptions.setPassword(options.getCertKey());
-							certOptions.setValue(Buffer.buffer(options.getCertValue()));
-							cOption.setKeyStoreOptions(certOptions);
-						} else {
-							PemKeyCertOptions certOptions = new PemKeyCertOptions();
-							certOptions.setKeyValue(Buffer.buffer(options.getCertKey()));
-							certOptions.setCertValue(Buffer.buffer(options.getCertValue()));
-							cOption.setPemKeyCertOptions(certOptions);
-						}
-					}
-					cOption.setSsl(true);
-				}
-				NetClient netClient = vertx.createNetClient(cOption);
-				OstTcpRequestHandler.request(netClient, options, res -> {
-					if (LOG.isDebugEnabled()) {
-						LOG.debug("进行测试前请求检查->TCP-->成功!");
-					}
-					handler.handle(Future.succeededFuture());
-				}, err -> {
-					if (LOG.isDebugEnabled()) {
-						LOG.debug("进行测试前请求检查->TCP-->失败:", err);
-					}
-					String msg = err.getMessage();
-					handler.handle(Future.failedFuture("进行测试前请求检查失败:" + msg));
-				});
-			} else {
-				handler.handle(Future.failedFuture("无效的请求类型!"));
-			}
-		} catch (Exception e) {
-			LOG.error("进行测试前请求检查-->失败:", e);
-			handler.handle(Future.failedFuture(e.getMessage()));
-		}
+    /**
+     * 启动测试服务
+     *
+     * @param options 请求的配置
+     * @param socket  Socket
+     */
+    private void startTest(OstRequestOptions options, ServerWebSocket socket) {
 
-	}
+        // 测试服务的名称
+        String testName;
+        // 测试镜像的名称
+        String snapshotName;
+        // 要启动的服务名称
+        String verticleName;
+        // 请求的总数量
+        long requestTotal;
+        if (options.getType() == OstRequestType.TCP) {
+            testName = "TCP";
+            snapshotName = "vertx.net";
+            verticleName = OstTcpVerticle.class.getName();
+            requestTotal = options.getCount();
+        } else if (options.getType() == OstRequestType.WebSocket) {
+            testName = "WebSocket";
+            snapshotName = "vertx.http";
+            verticleName = OstWebSocketVerticle.class.getName();
+            requestTotal = options.getCount();
+        } else {
+            testName = "HTTP";
+            snapshotName = "vertx.http";
+            verticleName = OstHttpVerticle.class.getName();
+            requestTotal = (options.getCount() * options.getAverage());
+        }
 
-	/**
-	 * 参数检查并加载请求信息<br>
-	 * type(String): 请求的类型:HTTP,WebSocket,TCP<br>
-	 * url(String):请求的url<br>
-	 * method(String): http请求的类型 {@link io.vertx.core.http.HttpMethod}<br>
-	 * isSSL(boolean): 是否使用SSL<br>
-	 * cert(String):证书的类型:DEFAULT,PEM,PFX,JKS <br>
-	 * certKey(String):证书的key <br>
-	 * certValue(String):证书的value <br>
-	 * headers(JsonArray(JsonObject){key,value}) 请求的header数据<br>
-	 * body(String):请求的body <br>
-	 * count(Long):请求的总次数 <br>
-	 * average(Long):每次请求多数次<br>
-	 * interval(Long):请求的间隔 <br>
-	 * keepAlive(boolean):是否保持连接 <br>
-	 * virtualUsers(Long):请求客户端数量 <br>
-	 * 
-	 * @param body
-	 * @return
-	 */
-	private void checkAndLoadRequestOptions(JsonObject body, Handler<AsyncResult<OstRequestOptions>> handler) {
-		try {
-			if (LOG.isDebugEnabled()) {
-				LOG.debug("执行参数检查并加载请求信息-->数据:" + body);
-			}
-			OstRequestOptions result = new OstRequestOptions();
-			result.setType(OstRequestType.valueOf(body.getString("type")));
-			String url = body.getString("url");
-			if (result.getType() == OstRequestType.HTTP) {
-				try {
-					new URL(url);
-				} catch (MalformedURLException e) {
-					handler.handle(Future.failedFuture("无效的URL:" + url));
-					return;
-				}
-				try {
-					HttpMethod method = HttpMethod.valueOf(body.getString("method"));
-					result.setMethod(method);
-				} catch (Exception e) {
-					handler.handle(Future.failedFuture("无效的method:" + body.getString("method")));
-					return;
-				}
-			} else if (result.getType() == OstRequestType.WebSocket) {
-				if (!url.startsWith("ws") && !url.startsWith("wss")) {
-					handler.handle(Future.failedFuture("无效的URL:" + url));
-					return;
-				}
-				result.setWebSocketVersion(WebsocketVersion.valueOf(body.getString("webSocketVersion")));
-				JsonArray subs = body.getJsonArray("subProtocols");
-				if (subs != null) {
-					List<String> subProtocols = new ArrayList<>();
-					for (int i = 0; i < subs.size(); i++) {
-						subProtocols.add(subs.getString(i));
-					}
-					if (subProtocols.size() > 0) {
-						result.setSubProtocols(subProtocols);
-					}
-				}
-			} else if (result.getType() == OstRequestType.TCP) {
-				result.setServerName(body.getString("serverName"));
-				result.setHost(body.getString("host"));
-				result.setPort(body.getInteger("port"));
-			}
-			result.setUrl(url);
-			Boolean ssl = body.getBoolean("isSSL");
-			if (ssl != null && ssl) {
-				result.setSsl(ssl);
-				OstSslCertType sslType = OstSslCertType.valueOf(body.getString("cert"));
-				if (sslType == OstSslCertType.DEFAULT) {
-					result.setCert(OstSslCertType.DEFAULT);
-				} else {
-					if (body.getString("certKey") == null || "".equals(body.getString("certKey").trim()) || body.getString("certValue") == null || "".equals(body.getString("certValue").trim())) {
-						handler.handle(Future.failedFuture("如果不使用默认SSL证书,证书的key与value不能为空"));
-						return;
-					}
-					result.setCertKey(body.getString("certKey"));
-					result.setCertValue(body.getString("certValue"));
-				}
-			}
-			if (body.getJsonArray("headers") != null) {
-				MultiMap header = MultiMap.caseInsensitiveMultiMap();
-				JsonArray th = body.getJsonArray("headers");
-				for (int i = 0; i < th.size(); i++) {
-					JsonObject h = th.getJsonObject(i);
-					if (h.getString("key") != null && h.getString("value") != null) {
-						header.add(h.getString("key"), h.getString("value"));
-					}
-				}
-				if (header.size() > 0) {
-					result.setHeaders(header);
-				}
-			}
-			if (body.getString("body") != null) {
-				result.setBody(Buffer.buffer(body.getString("body")));
-			}
-			int count = body.getInteger("count");
-			if (count < 1) {
-				handler.handle(Future.failedFuture("无效的请求的总次数"));
-				return;
-			}
-			result.setCount(count);
+        MicrometerMetricsOptions metricsOptions = new MicrometerMetricsOptions().setEnabled(true);
+        metricsOptions.setMicrometerRegistry(new SimpleMeterRegistry());
+        VertxOptions vertxOptions = new VertxOptions().setMetricsOptions(metricsOptions);
+        if ((options.getCount() > 100 || options.getInterval() > 1000 * 150) && instances < 100) {
+            vertxOptions.setWorkerPoolSize(100);
+        }
+        vertxOptions.setBlockedThreadCheckInterval(1000 * 60 * 60);
+        Vertx newVertx = Vertx.vertx(vertxOptions);
+        newVertx.exceptionHandler(err -> {
+            if ("GC overhead limit exceeded".equals(err.getMessage())) {
+                Set<String> iDs = newVertx.deploymentIDs();
+                for (String did : iDs) {
+                    newVertx.undeploy(did);
+                }
+                gcOverheadLimit = true;
+                String msg = ResultFormat.failed(OstCommand.ERROR, "The task exceeds the processing capacity of the console. please set the startup parameter to increase the JVM memory", err.getMessage());
+                LOG.info("执行控制台超过GC开销已停止工作,请重启软件并调大JVM内存!");
+                if (socket != null && !socket.isClosed()) {
+                    socket.writeTextMessage(msg);
+                    socket.close();
+                }
+            }
+        });
+        LocalDataVertx.put(options.getId(), newVertx);
+        JsonObject config = new JsonObject().put("optionsId", options.getId());
+        DeploymentOptions deployments = new DeploymentOptions();
+        deployments.setInstances(instances);
+        deployments.setConfig(config);
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("正在启动" + testName + "测试服务:" + deployments.toJson());
+        }
+        Promise<String> promise = Promise.promise();
+        promise.future().setHandler(h -> {
+            MetricsService service = MetricsService.create(newVertx);
+            vertx.setPeriodic(1000, tid -> {
+                if (socket.isClosed()) {
+                    vertx.cancelTimer(tid);
+                    return;
+                }
+                JsonObject snapshot = service.getMetricsSnapshot(snapshotName);
+                long succeeded = LocalDataCounter.getCount(Constant.REQUEST_SUCCEEDED_PREFIX + options.getId());
+                long failed = LocalDataCounter.getCount(Constant.REQUEST_FAILED_PREFIX + options.getId());
+                long endSum = (succeeded + failed);
+                snapshot.put("succeeded", succeeded);
+                snapshot.put("failed", failed);
+                socket.writeTextMessage(ResultFormat.success(OstCommand.TEST_RESPONSE, snapshot), writed -> {
+                    if (endSum >= requestTotal) {
+                        JsonObject metrics = service.getMetricsSnapshot(snapshotName);
+                        metrics.put("succeeded", succeeded);
+                        metrics.put("failed", failed);
+                        String msg = ResultFormat.success(OstCommand.TEST_RESPONSE, metrics);
+                        if (LOG.isDebugEnabled()) {
+                            LOG.debug("执行" + testName + "测试->完成-->结果:" + metrics);
+                        }
+                        socket.writeTextMessage(msg, mwend -> {
+                            String end = ResultFormat.success(OstCommand.TEST_COMPLETE, 1);
+                            socket.writeTextMessage(end, ended -> {
+                                socket.end();
+                            });
+                        });
+                    } else {
+                        LOG.info("执行发送信息给客户端-->已请求数量: " + endSum + " / " + requestTotal);
+                    }
+                });
+            });
+        });
 
-			int average = body.getInteger("average");
-			if (average < 1) {
-				handler.handle(Future.failedFuture("无效的每次请求多数次"));
-				return;
-			}
-			result.setAverage(average);
+        newVertx.deployVerticle(verticleName, deployments, res -> {
+            if (res.succeeded()) {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("启动" + testName + "测试服务-->成功!");
+                }
+                promise.complete();
+            } else {
+                LOG.error("启动" + testName + "测试服务-->失败:", res.cause());
+                String result = ResultFormat.failed(OstCommand.ERROR, res.cause().getMessage(), 0);
+                socket.writeTextMessage(result);
+                socket.end();
+            }
+        });
+    }
 
-			Long interval = body.getLong("interval");
+    private void startTest(OstRequestOptions options) {
+
+        // 测试服务的名称
+        String testName;
+        // 测试镜像的名称
+        String snapshotName;
+        // 要启动的服务名称
+        String verticleName;
+        // 请求的总数量
+        long requestTotal;
+        if (options.getType() == OstRequestType.TCP) {
+            testName = "TCP";
+            snapshotName = "vertx.net";
+            verticleName = OstTcpVerticle.class.getName();
+            requestTotal = options.getCount();
+        } else if (options.getType() == OstRequestType.WebSocket) {
+            testName = "WebSocket";
+            snapshotName = "vertx.http";
+            verticleName = OstWebSocketVerticle.class.getName();
+            requestTotal = options.getCount();
+        } else {
+            testName = "HTTP";
+            snapshotName = "vertx.http";
+            verticleName = OstHttpVerticle.class.getName();
+            requestTotal = (options.getCount() * options.getAverage());
+        }
+
+        MicrometerMetricsOptions metricsOptions = new MicrometerMetricsOptions().setEnabled(true);
+        metricsOptions.setMicrometerRegistry(new SimpleMeterRegistry());
+        VertxOptions vertxOptions = new VertxOptions().setMetricsOptions(metricsOptions);
+        if ((options.getCount() > 100 || options.getInterval() > 1000 * 150) && instances < 100) {
+            vertxOptions.setWorkerPoolSize(100);
+        }
+        vertxOptions.setBlockedThreadCheckInterval(1000 * 60 * 60);
+        Vertx newVertx = Vertx.vertx(vertxOptions);
+        newVertx.exceptionHandler(err -> {
+            if ("GC overhead limit exceeded".equals(err.getMessage())) {
+                Set<String> iDs = newVertx.deploymentIDs();
+                for (String did : iDs) {
+                    newVertx.undeploy(did);
+                }
+                gcOverheadLimit = true;
+                String msg = ResultFormat.failed(OstCommand.ERROR, "The task exceeds the processing capacity of the console. please set the startup parameter to increase the JVM memory", err.getMessage());
+                LOG.info("执行控制台超过GC开销已停止工作,请重启软件并调大JVM内存!");
+                System.err.println("执行控制台超过GC开销已停止工作");
+                System.exit(0);
+            }
+        });
+        LocalDataVertx.put(options.getId(), newVertx);
+        JsonObject config = new JsonObject().put("optionsId", options.getId());
+        DeploymentOptions deployments = new DeploymentOptions();
+        deployments.setInstances(instances);
+        deployments.setConfig(config);
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("正在启动" + testName + "测试服务:" + deployments.toJson());
+        }
+        Promise<String> promise = Promise.promise();
+        promise.future().setHandler(h -> {
+            MetricsService service = MetricsService.create(newVertx);
+            vertx.setPeriodic(5000, tid -> {
+
+                JsonObject snapshot = service.getMetricsSnapshot(snapshotName);
+                long succeeded = LocalDataCounter.getCount(Constant.REQUEST_SUCCEEDED_PREFIX + options.getId());
+                long failed = LocalDataCounter.getCount(Constant.REQUEST_FAILED_PREFIX + options.getId());
+                long endSum = (succeeded + failed);
+                snapshot.put("succeeded", succeeded);
+                snapshot.put("failed", failed);
+                JsonObject metrics = service.getMetricsSnapshot(snapshotName);
+                metrics.put("succeeded", succeeded);
+                metrics.put("failed", failed);
+                String msg = ResultFormat.success(OstCommand.TEST_RESPONSE, metrics);
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("执行" + testName + "测试->完成-->结果:" + metrics);
+                }
+                System.out.println(msg);
+                if (endSum >= requestTotal) {
+                    this.getVertx().close();
+                    System.exit(0);
+
+                }
+            });
+        });
+
+        newVertx.deployVerticle(verticleName, deployments, res -> {
+            if (res.succeeded()) {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("启动" + testName + "测试服务-->成功!");
+                }
+                promise.complete();
+            } else {
+                LOG.error("启动" + testName + "测试服务-->失败:", res.cause());
+                promise.fail("启动" + testName + "测试服务-->失败:");
+            }
+        });
+    }
+
+
+    /**
+     * 检查请求是否有效
+     *
+     * @param options 请求的配置
+     * @param handler 失败返回错误提示信息
+     */
+    private void checkRequest(OstRequestOptions options, Handler<AsyncResult<Void>> handler) {
+        try {
+            OstRequestType type = options.getType();
+            HttpClientOptions hOptions = new HttpClientOptions();
+            if (options.getCert() != null && options.getCert() != OstSslCertType.DEFAULT) {
+                if (OstSslCertType.PFX == options.getCert()) {
+                    PfxOptions certOptions = new PfxOptions();
+                    certOptions.setPassword(options.getCertKey());
+                    certOptions.setValue(Buffer.buffer(options.getCertValue()));
+                    hOptions.setPfxKeyCertOptions(certOptions);
+                } else if (OstSslCertType.JKS == options.getCert()) {
+                    JksOptions certOptions = new JksOptions();
+                    certOptions.setPassword(options.getCertKey());
+                    certOptions.setValue(Buffer.buffer(options.getCertValue()));
+                    hOptions.setKeyStoreOptions(certOptions);
+                } else {
+                    PemKeyCertOptions certOptions = new PemKeyCertOptions();
+                    certOptions.setKeyValue(Buffer.buffer(options.getCertKey()));
+                    certOptions.setCertValue(Buffer.buffer(options.getCertValue()));
+                    hOptions.setPemKeyCertOptions(certOptions);
+                }
+            }
+
+            if (type == OstRequestType.HTTP) {
+                HttpClient httpClient = vertx.createHttpClient(hOptions);
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("进行测试前请求正在检查HTTP后端服务是否可用...");
+                }
+                OstHttpRequestHandler.requestAbs(httpClient, options, res -> {
+                    if (res.succeeded()) {
+                        HttpClientResponse result = res.result();
+                        int code = result.statusCode();
+                        if (LOG.isDebugEnabled()) {
+                            LOG.debug("进行测试前请求检查->HTTP-->结果:" + code);
+                        }
+                        if (code >= 200 && code < 300) {
+                            handler.handle(Future.succeededFuture());
+                        } else {
+                            handler.handle(Future.failedFuture("进行测试前请求检查失败:返回了无效的状态码: " + code));
+                        }
+                    } else {
+                        String msg = res.cause().getMessage();
+                        if (LOG.isDebugEnabled()) {
+                            LOG.debug("进行测试前请求检查->HTTP-->失败:", res);
+                        }
+                        handler.handle(Future.failedFuture("进行测试前请求检查失败:" + msg));
+                    }
+                });
+
+            } else if (type == OstRequestType.WebSocket) {
+                HttpClient httpClient = vertx.createHttpClient(hOptions);
+                OstWebSocketRequestHandler.requestAbs(httpClient, options, res -> {
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("进行测试前请求检查->WebSocket-->成功!");
+                    }
+                    handler.handle(Future.succeededFuture());
+                }, err -> {
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("进行测试前请求检查->WebSocket-->失败:", err);
+                    }
+                    String msg = err.getMessage();
+                    handler.handle(Future.failedFuture("进行测试前请求检查失败:" + msg));
+                });
+            } else if (type == OstRequestType.TCP) {
+                NetClientOptions cOption = new NetClientOptions();
+                if (options.getCert() != null) {
+                    if (options.getCert() != OstSslCertType.DEFAULT) {
+                        if (OstSslCertType.PFX == options.getCert()) {
+                            PfxOptions certOptions = new PfxOptions();
+                            certOptions.setPassword(options.getCertKey());
+                            certOptions.setValue(Buffer.buffer(options.getCertValue()));
+                            cOption.setPfxKeyCertOptions(certOptions);
+                        } else if (OstSslCertType.JKS == options.getCert()) {
+                            JksOptions certOptions = new JksOptions();
+                            certOptions.setPassword(options.getCertKey());
+                            certOptions.setValue(Buffer.buffer(options.getCertValue()));
+                            cOption.setKeyStoreOptions(certOptions);
+                        } else {
+                            PemKeyCertOptions certOptions = new PemKeyCertOptions();
+                            certOptions.setKeyValue(Buffer.buffer(options.getCertKey()));
+                            certOptions.setCertValue(Buffer.buffer(options.getCertValue()));
+                            cOption.setPemKeyCertOptions(certOptions);
+                        }
+                    }
+                    cOption.setSsl(true);
+                }
+                NetClient netClient = vertx.createNetClient(cOption);
+                OstTcpRequestHandler.request(netClient, options, res -> {
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("进行测试前请求检查->TCP-->成功!");
+                    }
+                    handler.handle(Future.succeededFuture());
+                }, err -> {
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("进行测试前请求检查->TCP-->失败:", err);
+                    }
+                    String msg = err.getMessage();
+                    handler.handle(Future.failedFuture("进行测试前请求检查失败:" + msg));
+                });
+            } else {
+                handler.handle(Future.failedFuture("无效的请求类型!"));
+            }
+        } catch (Exception e) {
+            LOG.error("进行测试前请求检查-->失败:", e);
+            handler.handle(Future.failedFuture(e.getMessage()));
+        }
+
+    }
+
+    /**
+     * 参数检查并加载请求信息<br>
+     * type(String): 请求的类型:HTTP,WebSocket,TCP<br>
+     * url(String):请求的url<br>
+     * method(String): http请求的类型 {@link io.vertx.core.http.HttpMethod}<br>
+     * isSSL(boolean): 是否使用SSL<br>
+     * cert(String):证书的类型:DEFAULT,PEM,PFX,JKS <br>
+     * certKey(String):证书的key <br>
+     * certValue(String):证书的value <br>
+     * headers(JsonArray(JsonObject){key,value}) 请求的header数据<br>
+     * body(String):请求的body <br>
+     * count(Long):请求的总次数 <br>
+     * average(Long):每次请求多数次<br>
+     * interval(Long):请求的间隔 <br>
+     * keepAlive(boolean):是否保持连接 <br>
+     * virtualUsers(Long):请求客户端数量 <br>
+     *
+     * @param body
+     * @return
+     */
+    private void checkAndLoadRequestOptions(JsonObject body, Handler<AsyncResult<OstRequestOptions>> handler) {
+        try {
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("执行参数检查并加载请求信息-->数据:" + body);
+            }
+            OstRequestOptions result = new OstRequestOptions();
+            result.setType(OstRequestType.valueOf(body.getString("type")));
+            String url = body.getString("url");
+            if (result.getType() == OstRequestType.HTTP) {
+                try {
+                    new URL(url);
+                } catch (MalformedURLException e) {
+                    handler.handle(Future.failedFuture("无效的URL:" + url));
+                    return;
+                }
+                try {
+                    HttpMethod method = HttpMethod.valueOf(body.getString("method"));
+                    result.setMethod(method);
+                } catch (Exception e) {
+                    handler.handle(Future.failedFuture("无效的method:" + body.getString("method")));
+                    return;
+                }
+            } else if (result.getType() == OstRequestType.WebSocket) {
+                if (!url.startsWith("ws") && !url.startsWith("wss")) {
+                    handler.handle(Future.failedFuture("无效的URL:" + url));
+                    return;
+                }
+                result.setWebSocketVersion(WebsocketVersion.valueOf(body.getString("webSocketVersion")));
+                JsonArray subs = body.getJsonArray("subProtocols");
+                if (subs != null) {
+                    List<String> subProtocols = new ArrayList<>();
+                    for (int i = 0; i < subs.size(); i++) {
+                        subProtocols.add(subs.getString(i));
+                    }
+                    if (subProtocols.size() > 0) {
+                        result.setSubProtocols(subProtocols);
+                    }
+                }
+            } else if (result.getType() == OstRequestType.TCP) {
+                result.setServerName(body.getString("serverName"));
+                result.setHost(body.getString("host"));
+                result.setPort(body.getInteger("port"));
+            }
+            result.setUrl(url);
+            Boolean ssl = body.getBoolean("isSSL");
+            if (ssl != null && ssl) {
+                result.setSsl(ssl);
+                OstSslCertType sslType = OstSslCertType.valueOf(body.getString("cert"));
+                if (sslType == OstSslCertType.DEFAULT) {
+                    result.setCert(OstSslCertType.DEFAULT);
+                } else {
+                    if (body.getString("certKey") == null || "".equals(body.getString("certKey").trim()) || body.getString("certValue") == null || "".equals(body.getString("certValue").trim())) {
+                        handler.handle(Future.failedFuture("如果不使用默认SSL证书,证书的key与value不能为空"));
+                        return;
+                    }
+                    result.setCertKey(body.getString("certKey"));
+                    result.setCertValue(body.getString("certValue"));
+                }
+            }
+            if (body.getJsonArray("headers") != null) {
+                MultiMap header = MultiMap.caseInsensitiveMultiMap();
+                JsonArray th = body.getJsonArray("headers");
+                for (int i = 0; i < th.size(); i++) {
+                    JsonObject h = th.getJsonObject(i);
+                    if (h.getString("key") != null && h.getString("value") != null) {
+                        header.add(h.getString("key"), h.getString("value"));
+                    }
+                }
+                if (header.size() > 0) {
+                    result.setHeaders(header);
+                }
+            }
+            if (body.getString("body") != null) {
+                result.setBody(Buffer.buffer(body.getString("body")));
+            }
+            int count = body.getInteger("count");
+            if (count < 1) {
+                handler.handle(Future.failedFuture("无效的请求的总次数"));
+                return;
+            }
+            result.setCount(count);
+
+            int average = body.getInteger("average");
+            if (average < 1) {
+                handler.handle(Future.failedFuture("无效的每次请求多数次"));
+                return;
+            }
+            result.setAverage(average);
+            result.setThroughput(body.getInteger("throughput"));
+			/*Long interval = body.getLong("interval");
 			if (interval < 1) {
 				handler.handle(Future.failedFuture("无效的请求的间隔"));
 				return;
-			}
-			result.setInterval(interval);
-			result.setPrintResInfo(body.getBoolean("printResInfo"));
-			result.setKeepAlive(body.getBoolean("keepAlive"));
-			result.setTimeout(body.getInteger("timeout"));
-			if (body.getBoolean("keepAlive")) {
-				int au = body.getInteger("poolSize");
-				result.setPoolSize(au);
-			}
-			handler.handle(Future.succeededFuture(result));
-		} catch (Exception e) {
-			if (LOG.isDebugEnabled()) {
-				LOG.debug("执行参数检查并加载请求信息-->失败:", e);
-			}
-			handler.handle(Future.failedFuture("缺少参数或存在无效的参数"));
-		}
-	}
+			}*/
+            //result.setInterval(interval);
+            result.setPrintResInfo(body.getBoolean("printResInfo"));
+            result.setKeepAlive(body.getBoolean("keepAlive"));
+            result.setTimeout(body.getInteger("timeout"));
+            if (body.getBoolean("keepAlive")) {
+                int au = body.getInteger("poolSize");
+                result.setPoolSize(au);
+            }
+            handler.handle(Future.succeededFuture(result));
+        } catch (Exception e) {
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("执行参数检查并加载请求信息-->失败:", e);
+            }
+            handler.handle(Future.failedFuture("缺少参数或存在无效的参数"));
+        }
+    }
 
 }
