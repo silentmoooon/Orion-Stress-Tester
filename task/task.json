@@ -1,0 +1,13 @@
+{
+  "type": "HTTP",
+  "url": "https://www.baidu.com",
+  "count": 5,
+  "average": 10,
+  "throughput": 5000,
+  "isSSL": true,
+  "cert": "DEFAULT",
+  "method": "GET",
+  "keepAlive": true,
+  "poolSize": 50,
+  "printResInfo": false
+}

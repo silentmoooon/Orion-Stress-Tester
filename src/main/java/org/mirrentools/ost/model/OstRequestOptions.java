@@ -1,14 +1,13 @@
 package org.mirrentools.ost.model;
 
-import java.util.List;
-
-import org.mirrentools.ost.enums.OstRequestType;
-import org.mirrentools.ost.enums.OstSslCertType;
-
 import io.vertx.core.MultiMap;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.WebsocketVersion;
+import org.mirrentools.ost.enums.OstRequestType;
+import org.mirrentools.ost.enums.OstSslCertType;
+
+import java.util.List;
 
 /**
  * 请求配置
@@ -49,7 +48,7 @@ public class OstRequestOptions {
 	private Buffer body;
 	/** 请求的总次数 */
 	private int count;
-	/** 每次请求多数次 */
+	/** 同时并发数 */
 	private int average;
 	/** 请求的间隔 */
 	private long interval;
@@ -61,6 +60,10 @@ public class OstRequestOptions {
 	private int poolSize;
 	/** 请求超时时间(ms) */
 	private Integer timeout;
+	/**
+	 * 吞吐量 每秒请求数上限
+	 */
+	private Integer throughput;
 
 	/**
 	 * 获取当前请求配置的id通常对应客户端WebSocket的写id
@@ -383,7 +386,7 @@ public class OstRequestOptions {
 	}
 
 	/**
-	 * 获取每次请求的数量
+	 * 获取同时并发数
 	 * 
 	 * @return
 	 */
@@ -509,6 +512,14 @@ public class OstRequestOptions {
 	public OstRequestOptions setTimeout(Integer timeout) {
 		this.timeout = timeout;
 		return this;
+	}
+
+	public Integer getThroughput() {
+		return throughput;
+	}
+
+	public void setThroughput(Integer throughput) {
+		this.throughput = throughput;
 	}
 
 	@Override
