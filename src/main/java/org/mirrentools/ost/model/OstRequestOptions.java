@@ -1,13 +1,9 @@
 package org.mirrentools.ost.model;
 
-import io.vertx.core.MultiMap;
-import io.vertx.core.buffer.Buffer;
-import io.vertx.core.http.HttpMethod;
-import io.vertx.core.http.WebsocketVersion;
-import org.mirrentools.ost.enums.OstRequestType;
-import org.mirrentools.ost.enums.OstSslCertType;
-
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 请求配置
@@ -19,7 +15,7 @@ public class OstRequestOptions {
 	/** 当前请求配置的id通常对应客户端WebSocket的写id */
 	private String id;
 	/** 请求的类型 */
-	private OstRequestType type;
+	private String type;
 	/** 主机地址,仅TCP有效 */
 	private String host;
 	/** 端口号,仅TCP有效 */
@@ -27,25 +23,26 @@ public class OstRequestOptions {
 	/** 服务器的名称,仅TCP有效 */
 	private String serverName;
 	/** WebSocket的版本 */
-	private WebsocketVersion webSocketVersion;
+	private String webSocketVersion;
 	/** WenSocket的请求子协议 */
 	private List<String> subProtocols;
 	/** 请求的url */
 	private String url;
 	/** http请求的method类型 {@link io.vertx.core.http.HttpMethod} */
-	private HttpMethod method;
+	private String method;
 	/** 是否使用SSL */
 	private boolean ssl;
 	/** 证书的类型 */
-	private OstSslCertType cert;
+	private String cert;
 	/** 证书的key */
 	private String certKey;
 	/** 证书的value */
 	private String certValue;
 	/** 请求的header数据 */
-	private MultiMap headers;
+	private Map<String,String> headers=new HashMap<>();
+	private LinkedHashMap<String,String> parameters=new LinkedHashMap<>();
 	/** 请求的body */
-	private Buffer body;
+	private String body;
 	/** 请求的总次数 */
 	private int count;
 	/** 同时并发数 */
@@ -90,7 +87,7 @@ public class OstRequestOptions {
 	 * 
 	 * @return
 	 */
-	public OstRequestType getType() {
+	public String getType() {
 		return type;
 	}
 
@@ -100,7 +97,7 @@ public class OstRequestOptions {
 	 * @param type
 	 * @return
 	 */
-	public OstRequestOptions setType(OstRequestType type) {
+	public OstRequestOptions setType(String type) {
 		this.type = type;
 		return this;
 	}
@@ -170,7 +167,7 @@ public class OstRequestOptions {
 	 * 
 	 * @return
 	 */
-	public WebsocketVersion getWebSocketVersion() {
+	public String getWebSocketVersion() {
 		return webSocketVersion;
 	}
 
@@ -180,7 +177,7 @@ public class OstRequestOptions {
 	 * @param webSocketVersion
 	 * @return
 	 */
-	public OstRequestOptions setWebSocketVersion(WebsocketVersion webSocketVersion) {
+	public OstRequestOptions setWebSocketVersion(String webSocketVersion) {
 		this.webSocketVersion = webSocketVersion;
 		return this;
 	}
@@ -230,7 +227,7 @@ public class OstRequestOptions {
 	 * 
 	 * @return
 	 */
-	public HttpMethod getMethod() {
+	public String getMethod() {
 		return method;
 	}
 
@@ -240,7 +237,7 @@ public class OstRequestOptions {
 	 * @param method
 	 * @return
 	 */
-	public OstRequestOptions setMethod(HttpMethod method) {
+	public OstRequestOptions setMethod(String method) {
 		this.method = method;
 		return this;
 	}
@@ -270,7 +267,7 @@ public class OstRequestOptions {
 	 * 
 	 * @return
 	 */
-	public OstSslCertType getCert() {
+	public String getCert() {
 		return cert;
 	}
 
@@ -280,7 +277,7 @@ public class OstRequestOptions {
 	 * @param cert
 	 * @return
 	 */
-	public OstRequestOptions setCert(OstSslCertType cert) {
+	public OstRequestOptions setCert(String cert) {
 		this.cert = cert;
 		return this;
 	}
@@ -330,7 +327,7 @@ public class OstRequestOptions {
 	 * 
 	 * @return
 	 */
-	public MultiMap getHeaders() {
+	public Map<String, String> getHeaders() {
 		return headers;
 	}
 
@@ -340,7 +337,7 @@ public class OstRequestOptions {
 	 * @param headers
 	 * @return
 	 */
-	public OstRequestOptions setHeaders(MultiMap headers) {
+	public OstRequestOptions setHeaders(Map<String, String> headers) {
 		this.headers = headers;
 		return this;
 	}
@@ -350,9 +347,10 @@ public class OstRequestOptions {
 	 * 
 	 * @return
 	 */
-	public Buffer getBody() {
+	public String getBody() {
 		return body;
 	}
+
 
 	/**
 	 * 设置body
@@ -360,7 +358,7 @@ public class OstRequestOptions {
 	 * @param body
 	 * @return
 	 */
-	public OstRequestOptions setBody(Buffer body) {
+	public OstRequestOptions setBody(String body) {
 		this.body = body;
 		return this;
 	}
@@ -411,7 +409,7 @@ public class OstRequestOptions {
 	 * @return
 	 */
 	public long getReuestCountSum() {
-		return getCount() * getAverage();
+		return getCount() ;
 	}
 
 	/**
@@ -518,8 +516,20 @@ public class OstRequestOptions {
 		return throughput;
 	}
 
-	public void setThroughput(Integer throughput) {
+
+
+	public OstRequestOptions setThroughput(Integer throughput) {
 		this.throughput = throughput;
+		return this;
+	}
+
+	public LinkedHashMap<String, String> getParameters() {
+		return parameters;
+	}
+
+	public OstRequestOptions setParameters(LinkedHashMap<String, String> parameters) {
+		this.parameters = parameters;
+		return this;
 	}
 
 	@Override

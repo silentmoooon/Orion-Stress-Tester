@@ -55,13 +55,13 @@ public class OstWebSocketVerticle extends AbstractVerticle {
 				}
 				if (options.isKeepAlive()) {
 					HttpClientOptions hOptions = new HttpClientOptions();
-					if (options.getCert() != null && options.getCert() != OstSslCertType.DEFAULT) {
-						if (OstSslCertType.PFX == options.getCert()) {
+					if (options.getCert() != null && OstSslCertType.valueOf(options.getCert()) != OstSslCertType.DEFAULT) {
+						if (OstSslCertType.PFX == OstSslCertType.valueOf(options.getCert())) {
 							PfxOptions certOptions = new PfxOptions();
 							certOptions.setPassword(options.getCertKey());
 							certOptions.setValue(Buffer.buffer(options.getCertValue()));
 							hOptions.setPfxKeyCertOptions(certOptions);
-						} else if (OstSslCertType.JKS == options.getCert()) {
+						} else if (OstSslCertType.JKS == OstSslCertType.valueOf(options.getCert())) {
 							JksOptions certOptions = new JksOptions();
 							certOptions.setPassword(options.getCertKey());
 							certOptions.setValue(Buffer.buffer(options.getCertValue()));
@@ -142,13 +142,13 @@ public class OstWebSocketVerticle extends AbstractVerticle {
 		final HttpClient httpClient;
 		if (init) {
 			HttpClientOptions hOptions = new HttpClientOptions();
-			if (options.getCert() != null && options.getCert() != OstSslCertType.DEFAULT) {
-				if (OstSslCertType.PFX == options.getCert()) {
+			if (options.getCert() != null && OstSslCertType.valueOf(options.getCert()) != OstSslCertType.DEFAULT) {
+				if (OstSslCertType.PFX == OstSslCertType.valueOf(options.getCert())) {
 					PfxOptions certOptions = new PfxOptions();
 					certOptions.setPassword(options.getCertKey());
 					certOptions.setValue(Buffer.buffer(options.getCertValue()));
 					hOptions.setPfxKeyCertOptions(certOptions);
-				} else if (OstSslCertType.JKS == options.getCert()) {
+				} else if (OstSslCertType.JKS == OstSslCertType.valueOf(options.getCert())) {
 					JksOptions certOptions = new JksOptions();
 					certOptions.setPassword(options.getCertKey());
 					certOptions.setValue(Buffer.buffer(options.getCertValue()));

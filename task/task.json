@@ -1,12 +1,15 @@
 {
   "type": "HTTP",
-  "url": "https://www.baidu.com",
-  "count": 5,
+  "url": "http://127.0.0.1:8000",
+  "count": 1000,
   "average": 10,
   "throughput": 5000,
-  "isSSL": true,
+  "ssl": true,
   "cert": "DEFAULT",
   "method": "GET",
+  "body": "0084${date.yyyyMMddHHmmssSSS}${random.randomNum(11)}",
+  "parameters": {
+  },
   "keepAlive": true,
   "poolSize": 50,
   "printResInfo": false

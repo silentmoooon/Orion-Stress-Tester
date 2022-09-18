@@ -52,13 +52,13 @@ public class OstHttpVerticle extends AbstractVerticle {
                 }
                 if (options.isKeepAlive()) {
                     HttpClientOptions hOptions = new HttpClientOptions();
-                    if (options.getCert() != null && options.getCert() != OstSslCertType.DEFAULT) {
-                        if (OstSslCertType.PFX == options.getCert()) {
+                    if (options.getCert() != null && OstSslCertType.valueOf(options.getCert()) != OstSslCertType.DEFAULT) {
+                        if (OstSslCertType.PFX == OstSslCertType.valueOf(options.getCert())) {
                             PfxOptions certOptions = new PfxOptions();
                             certOptions.setPassword(options.getCertKey());
                             certOptions.setValue(Buffer.buffer(options.getCertValue()));
                             hOptions.setPfxKeyCertOptions(certOptions);
-                        } else if (OstSslCertType.JKS == options.getCert()) {
+                        } else if (OstSslCertType.JKS == OstSslCertType.valueOf(options.getCert())) {
                             JksOptions certOptions = new JksOptions();
                             certOptions.setPassword(options.getCertKey());
                             certOptions.setValue(Buffer.buffer(options.getCertValue()));
@@ -71,8 +71,7 @@ public class OstHttpVerticle extends AbstractVerticle {
                         }
                     }
                     hOptions.setMaxPoolSize(options.getPoolSize());
-                    int indeTime = ((Number) (options.getCount() * (options.getInterval() / 1000))).intValue();
-                    hOptions.setIdleTimeout(indeTime);
+
                     if (options.getTimeout() != null) {
                         hOptions.setConnectTimeout(options.getTimeout());
                     }
@@ -85,6 +84,7 @@ public class OstHttpVerticle extends AbstractVerticle {
                     try { // 发布测试任务
                         int count = options.getCount();
                         int average = options.getAverage();
+
                         for (int i = 1; i <= count; i++) {
 
                             int size = i;
@@ -134,9 +134,9 @@ public class OstHttpVerticle extends AbstractVerticle {
         String id = msg.body().getString("id");
         int count = msg.body().getInteger("count");
         int index = msg.body().getInteger("index");
-        if (LOG.isDebugEnabled()) {
+        /*if (LOG.isDebugEnabled()) {
             LOG.debug("Thread[" + Thread.currentThread().getId() + "] [" + count + "-" + index + "]处理器:" + deploymentID());
-        }
+        }*/
         boolean init = msg.body().getBoolean("init");
         ServerWebSocket socket = LocalDataServerWebSocket.get(id);
 		/*if (socket == null || socket.isClosed()) {
@@ -147,13 +147,13 @@ public class OstHttpVerticle extends AbstractVerticle {
         final HttpClient httpClient;
         if (init) {
             HttpClientOptions hOptions = new HttpClientOptions();
-            if (options.getCert() != null && options.getCert() != OstSslCertType.DEFAULT) {
-                if (OstSslCertType.PFX == options.getCert()) {
+            if (options.getCert() != null && OstSslCertType.valueOf(options.getCert()) != OstSslCertType.DEFAULT) {
+                if (OstSslCertType.PFX == OstSslCertType.valueOf(options.getCert())) {
                     PfxOptions certOptions = new PfxOptions();
                     certOptions.setPassword(options.getCertKey());
                     certOptions.setValue(Buffer.buffer(options.getCertValue()));
                     hOptions.setPfxKeyCertOptions(certOptions);
-                } else if (OstSslCertType.JKS == options.getCert()) {
+                } else if (OstSslCertType.JKS == OstSslCertType.valueOf(options.getCert())) {
                     JksOptions certOptions = new JksOptions();
                     certOptions.setPassword(options.getCertKey());
                     certOptions.setValue(Buffer.buffer(options.getCertValue()));
@@ -194,6 +194,9 @@ public class OstHttpVerticle extends AbstractVerticle {
                 info.setState(0);
                 writeMsg(info, OstCommand.TEST_LOG_RESPONSE, socket);
             }
+            if (count == LocalDataCounter.getCount(options.getId())) {
+                LocalDataCounter.setEndTime(options.getId(), System.currentTimeMillis());
+            }
         });
     }
 
@@ -207,7 +210,7 @@ public class OstHttpVerticle extends AbstractVerticle {
     private void writeMsg(OstResponseInfo info, OstCommand command, ServerWebSocket socket) {
         String result = ResultFormat.success(command, info.toJson());
         if (socket == null || socket.isClosed()) {
-            System.out.println("msg:" + result);
+            //System.out.println("msg:" + result);
             return;
         }
         socket.writeTextMessage(result);

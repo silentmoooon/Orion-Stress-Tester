@@ -92,7 +92,7 @@ public class MainLauncher extends Launcher {
 		} catch (IOException e) {
 			e.printStackTrace();
 			if (e instanceof NoSuchFileException) {
-				System.err.println("请确保Orion-Stress-Tester-fat.jar同级目录有一个webroot文件夹与data文件夹,data文件夹里面需要有一个config.json配置文件");
+				System.err.println("请确保Orion-Stress-Tester-fat.jar同级目录有一个webroot文件夹与config文件夹,config文件夹里面需要有一个config.json配置文件");
 				System.exit(0);
 			}
 		}

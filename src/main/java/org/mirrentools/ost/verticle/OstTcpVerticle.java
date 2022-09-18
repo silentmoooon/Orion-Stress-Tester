@@ -110,13 +110,13 @@ public class OstTcpVerticle extends AbstractVerticle {
 		NetClientOptions cOptions = new NetClientOptions();
 		if (options.getCert() != null) {
 			cOptions.setSsl(true);
-			if (options.getCert() != OstSslCertType.DEFAULT) {
-				if (OstSslCertType.PFX == options.getCert()) {
+			if (OstSslCertType.valueOf(options.getCert()) != OstSslCertType.DEFAULT) {
+				if (OstSslCertType.PFX == OstSslCertType.valueOf(options.getCert())) {
 					PfxOptions certOptions = new PfxOptions();
 					certOptions.setPassword(options.getCertKey());
 					certOptions.setValue(Buffer.buffer(options.getCertValue()));
 					cOptions.setPfxKeyCertOptions(certOptions);
-				} else if (OstSslCertType.JKS == options.getCert()) {
+				} else if (OstSslCertType.JKS == OstSslCertType.valueOf(options.getCert())) {
 					JksOptions certOptions = new JksOptions();
 					certOptions.setPassword(options.getCertKey());
 					certOptions.setValue(Buffer.buffer(options.getCertValue()));

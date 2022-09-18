@@ -1,9 +1,11 @@
 package org.mirrentools.ost;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.netty.util.internal.StringUtil;
 import io.vertx.core.*;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.*;
+import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
@@ -20,6 +22,7 @@ import org.mirrentools.ost.enums.OstSslCertType;
 import org.mirrentools.ost.handler.OstHttpRequestHandler;
 import org.mirrentools.ost.handler.OstTcpRequestHandler;
 import org.mirrentools.ost.handler.OstWebSocketRequestHandler;
+import org.mirrentools.ost.handler.UserParameter;
 import org.mirrentools.ost.model.OstRequestOptions;
 import org.mirrentools.ost.verticle.OstHttpVerticle;
 import org.mirrentools.ost.verticle.OstTcpVerticle;
@@ -29,11 +32,10 @@ import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Set;
 
 /**
@@ -159,7 +161,8 @@ public class MainVerticle extends AbstractVerticle {
                         socket.end();
                     } else if (code.equals(OstCommand.SUBMIT_TEST.value())) {
                         JsonObject data = body.getJsonObject(Constant.DATA);
-                        checkAndLoadRequestOptions(data, res -> {
+                        OstRequestOptions ostRequestOptions = Json.decodeValue(data.toString(), OstRequestOptions.class);
+                        checkAndLoadRequestOptions(ostRequestOptions, res -> {
                             if (res.succeeded()) {
                                 // 检查与装载数据成功,提交测试任务
                                 OstRequestOptions options = res.result();
@@ -228,13 +231,14 @@ public class MainVerticle extends AbstractVerticle {
             String root = System.getProperty("user.dir");
             Path path = Paths.get(root, "task", "task.json");
             bs = Files.readAllBytes(path);
-            JsonObject data = new JsonObject(new String(bs));
-            checkAndLoadRequestOptions(data, res -> {
+            OstRequestOptions ostRequestOptions = Json.decodeValue(new String(bs, StandardCharsets.UTF_8), OstRequestOptions.class);
+            String id = String.valueOf(System.currentTimeMillis());
+            ostRequestOptions.setId(id);
+            checkAndLoadRequestOptions(ostRequestOptions, res -> {
                 if (res.succeeded()) {
                     // 检查与装载数据成功,提交测试任务
                     OstRequestOptions options = res.result();
-                    String id = String.valueOf(System.currentTimeMillis());
-                    options.setId(id);
+
                     if (LOG.isDebugEnabled()) {
                         LOG.debug("加载并检查请求参数-->成功:" + options);
                     }
@@ -284,7 +288,7 @@ public class MainVerticle extends AbstractVerticle {
                 // 请求的id
                 String optionsId = socket.textHandlerID();
                 // 存储需要请求的数量
-                LocalDataCounter.newCounter(optionsId, (options.getAverage() * options.getCount()));
+                LocalDataCounter.newCounter(optionsId, options.getCount());
                 // 共享WebSocket
                 LocalDataServerWebSocket.put(optionsId, socket);
                 // 共享请求配置
@@ -315,7 +319,7 @@ public class MainVerticle extends AbstractVerticle {
                 // 请求的id
                 String optionsId = options.getId();
                 // 存储需要请求的数量
-                LocalDataCounter.newCounter(optionsId, (options.getAverage() * options.getCount()));
+                LocalDataCounter.newCounter(optionsId, (options.getCount()));
 
                 // 共享请求配置
                 LocalDataRequestOptions.put(optionsId, options);
@@ -346,12 +350,12 @@ public class MainVerticle extends AbstractVerticle {
         String verticleName;
         // 请求的总数量
         long requestTotal;
-        if (options.getType() == OstRequestType.TCP) {
+        if (OstRequestType.valueOf(options.getType()) == OstRequestType.TCP) {
             testName = "TCP";
             snapshotName = "vertx.net";
             verticleName = OstTcpVerticle.class.getName();
             requestTotal = options.getCount();
-        } else if (options.getType() == OstRequestType.WebSocket) {
+        } else if (OstRequestType.valueOf(options.getType()) == OstRequestType.WebSocket) {
             testName = "WebSocket";
             snapshotName = "vertx.http";
             verticleName = OstWebSocketVerticle.class.getName();
@@ -360,15 +364,12 @@ public class MainVerticle extends AbstractVerticle {
             testName = "HTTP";
             snapshotName = "vertx.http";
             verticleName = OstHttpVerticle.class.getName();
-            requestTotal = (options.getCount() * options.getAverage());
+            requestTotal = (options.getCount());
         }
 
         MicrometerMetricsOptions metricsOptions = new MicrometerMetricsOptions().setEnabled(true);
         metricsOptions.setMicrometerRegistry(new SimpleMeterRegistry());
         VertxOptions vertxOptions = new VertxOptions().setMetricsOptions(metricsOptions);
-        if ((options.getCount() > 100 || options.getInterval() > 1000 * 150) && instances < 100) {
-            vertxOptions.setWorkerPoolSize(100);
-        }
         vertxOptions.setBlockedThreadCheckInterval(1000 * 60 * 60);
         Vertx newVertx = Vertx.vertx(vertxOptions);
         newVertx.exceptionHandler(err -> {
@@ -397,7 +398,7 @@ public class MainVerticle extends AbstractVerticle {
         Promise<String> promise = Promise.promise();
         promise.future().setHandler(h -> {
             MetricsService service = MetricsService.create(newVertx);
-            vertx.setPeriodic(1000, tid -> {
+            vertx.setPeriodic(5000, tid -> {
                 if (socket.isClosed()) {
                     vertx.cancelTimer(tid);
                     return;
@@ -455,12 +456,12 @@ public class MainVerticle extends AbstractVerticle {
         String verticleName;
         // 请求的总数量
         long requestTotal;
-        if (options.getType() == OstRequestType.TCP) {
+        if (OstRequestType.valueOf(options.getType()) == OstRequestType.TCP) {
             testName = "TCP";
             snapshotName = "vertx.net";
             verticleName = OstTcpVerticle.class.getName();
             requestTotal = options.getCount();
-        } else if (options.getType() == OstRequestType.WebSocket) {
+        } else if (OstRequestType.valueOf(options.getType()) == OstRequestType.WebSocket) {
             testName = "WebSocket";
             snapshotName = "vertx.http";
             verticleName = OstWebSocketVerticle.class.getName();
@@ -469,15 +470,13 @@ public class MainVerticle extends AbstractVerticle {
             testName = "HTTP";
             snapshotName = "vertx.http";
             verticleName = OstHttpVerticle.class.getName();
-            requestTotal = (options.getCount() * options.getAverage());
+            requestTotal = options.getCount();
         }
 
         MicrometerMetricsOptions metricsOptions = new MicrometerMetricsOptions().setEnabled(true);
         metricsOptions.setMicrometerRegistry(new SimpleMeterRegistry());
         VertxOptions vertxOptions = new VertxOptions().setMetricsOptions(metricsOptions);
-        if ((options.getCount() > 100 || options.getInterval() > 1000 * 150) && instances < 100) {
-            vertxOptions.setWorkerPoolSize(100);
-        }
+
         vertxOptions.setBlockedThreadCheckInterval(1000 * 60 * 60);
         Vertx newVertx = Vertx.vertx(vertxOptions);
         newVertx.exceptionHandler(err -> {
@@ -504,21 +503,35 @@ public class MainVerticle extends AbstractVerticle {
         Promise<String> promise = Promise.promise();
         promise.future().setHandler(h -> {
             MetricsService service = MetricsService.create(newVertx);
+            LocalDataCounter.setStartTime(options.getId(), System.currentTimeMillis());
+
             vertx.setPeriodic(5000, tid -> {
 
-                JsonObject snapshot = service.getMetricsSnapshot(snapshotName);
                 long succeeded = LocalDataCounter.getCount(Constant.REQUEST_SUCCEEDED_PREFIX + options.getId());
                 long failed = LocalDataCounter.getCount(Constant.REQUEST_FAILED_PREFIX + options.getId());
                 long endSum = (succeeded + failed);
-                snapshot.put("succeeded", succeeded);
-                snapshot.put("failed", failed);
-                JsonObject metrics = service.getMetricsSnapshot(snapshotName);
-                metrics.put("succeeded", succeeded);
-                metrics.put("failed", failed);
-                String msg = ResultFormat.success(OstCommand.TEST_RESPONSE, metrics);
-                if (LOG.isDebugEnabled()) {
-                    LOG.debug("执行" + testName + "测试->完成-->结果:" + metrics);
+                long lastCount = LocalDataCounter.getCount(Constant.REQUEST_LAST_COUNT_PREFIX + options.getId());
+                long lastTime = LocalDataCounter.getCount(Constant.REQUEST_LAST_TIME_PREFIX + options.getId());
+                long startTime = LocalDataCounter.getStartTime(options.getId());
+                //如果已经结束则取结束时间
+                Long now = LocalDataCounter.getEndTime(options.getId());
+                if (now == null) {
+                    now = System.currentTimeMillis();
                 }
+                LocalDataCounter.setCount(Constant.REQUEST_LAST_COUNT_PREFIX + options.getId(), endSum);
+                LocalDataCounter.setCount(Constant.REQUEST_LAST_TIME_PREFIX + options.getId(), now);
+                JsonObject metrics = service.getMetricsSnapshot(snapshotName);
+                JsonArray jsonArray = metrics.getJsonArray("vertx.http.client.responseTime");
+                JsonObject jsonObject = jsonArray.getJsonObject(0);
+                String msg = "\n";
+                msg = msg + "本次执行时间:" + (now - lastTime) / 1000 + "s\n";
+                msg += "本次tps: " + (endSum - lastCount) / ((now - lastTime) / 1000) + "/s\t累计TPS:"+(endSum)/((now-startTime)/1000)+"/s\n";
+                msg += "本次执行: " + (endSum - lastCount) + "\t 累计执行: " + endSum + "\t 累计成功: " + succeeded + "\t 累计失败: " + failed + " \n";
+                msg += "累计耗时: " + jsonObject.getDouble("totalTimeMs") + "ms\t 平均耗时: " + jsonObject.getDouble("meanMs") + "ms\t 最大耗时: " + jsonObject.getDouble("maxMs") + "ms";
+
+               /* if (LOG.isDebugEnabled()) {
+                    LOG.debug("执行" + testName + "测试->完成-->结果:" + metrics);
+                }*/
                 System.out.println(msg);
                 if (endSum >= requestTotal) {
                     this.getVertx().close();
@@ -550,15 +563,15 @@ public class MainVerticle extends AbstractVerticle {
      */
     private void checkRequest(OstRequestOptions options, Handler<AsyncResult<Void>> handler) {
         try {
-            OstRequestType type = options.getType();
+            OstRequestType type = OstRequestType.valueOf(options.getType());
             HttpClientOptions hOptions = new HttpClientOptions();
-            if (options.getCert() != null && options.getCert() != OstSslCertType.DEFAULT) {
-                if (OstSslCertType.PFX == options.getCert()) {
+            if (options.getCert() != null && OstSslCertType.valueOf(options.getCert()) != OstSslCertType.DEFAULT) {
+                if (OstSslCertType.PFX == OstSslCertType.valueOf(options.getCert())) {
                     PfxOptions certOptions = new PfxOptions();
                     certOptions.setPassword(options.getCertKey());
                     certOptions.setValue(Buffer.buffer(options.getCertValue()));
                     hOptions.setPfxKeyCertOptions(certOptions);
-                } else if (OstSslCertType.JKS == options.getCert()) {
+                } else if (OstSslCertType.JKS == OstSslCertType.valueOf(options.getCert())) {
                     JksOptions certOptions = new JksOptions();
                     certOptions.setPassword(options.getCertKey());
                     certOptions.setValue(Buffer.buffer(options.getCertValue()));
@@ -614,13 +627,13 @@ public class MainVerticle extends AbstractVerticle {
             } else if (type == OstRequestType.TCP) {
                 NetClientOptions cOption = new NetClientOptions();
                 if (options.getCert() != null) {
-                    if (options.getCert() != OstSslCertType.DEFAULT) {
-                        if (OstSslCertType.PFX == options.getCert()) {
+                    if (OstSslCertType.valueOf(options.getCert()) != OstSslCertType.DEFAULT) {
+                        if (OstSslCertType.PFX == OstSslCertType.valueOf(options.getCert())) {
                             PfxOptions certOptions = new PfxOptions();
                             certOptions.setPassword(options.getCertKey());
                             certOptions.setValue(Buffer.buffer(options.getCertValue()));
                             cOption.setPfxKeyCertOptions(certOptions);
-                        } else if (OstSslCertType.JKS == options.getCert()) {
+                        } else if (OstSslCertType.JKS == OstSslCertType.valueOf(options.getCert())) {
                             JksOptions certOptions = new JksOptions();
                             certOptions.setPassword(options.getCertKey());
                             certOptions.setValue(Buffer.buffer(options.getCertValue()));
@@ -674,18 +687,17 @@ public class MainVerticle extends AbstractVerticle {
      * keepAlive(boolean):是否保持连接 <br>
      * virtualUsers(Long):请求客户端数量 <br>
      *
-     * @param body
+     * @param result
      * @return
      */
-    private void checkAndLoadRequestOptions(JsonObject body, Handler<AsyncResult<OstRequestOptions>> handler) {
+    private void checkAndLoadRequestOptions(OstRequestOptions result, Handler<AsyncResult<OstRequestOptions>> handler) {
         try {
             if (LOG.isDebugEnabled()) {
-                LOG.debug("执行参数检查并加载请求信息-->数据:" + body);
+                LOG.debug("执行参数检查-->数据:" + Json.encode(result));
             }
-            OstRequestOptions result = new OstRequestOptions();
-            result.setType(OstRequestType.valueOf(body.getString("type")));
-            String url = body.getString("url");
-            if (result.getType() == OstRequestType.HTTP) {
+
+            String url = result.getUrl();
+            if (OstRequestType.valueOf(result.getType()) == OstRequestType.HTTP) {
                 try {
                     new URL(url);
                 } catch (MalformedURLException e) {
@@ -693,50 +705,35 @@ public class MainVerticle extends AbstractVerticle {
                     return;
                 }
                 try {
-                    HttpMethod method = HttpMethod.valueOf(body.getString("method"));
-                    result.setMethod(method);
+                    HttpMethod.valueOf(result.getMethod());
                 } catch (Exception e) {
-                    handler.handle(Future.failedFuture("无效的method:" + body.getString("method")));
+                    handler.handle(Future.failedFuture("无效的method:" + result.getMethod()));
                     return;
                 }
-            } else if (result.getType() == OstRequestType.WebSocket) {
+            } else if (OstRequestType.valueOf(result.getType()) == OstRequestType.WebSocket) {
                 if (!url.startsWith("ws") && !url.startsWith("wss")) {
                     handler.handle(Future.failedFuture("无效的URL:" + url));
                     return;
                 }
-                result.setWebSocketVersion(WebsocketVersion.valueOf(body.getString("webSocketVersion")));
-                JsonArray subs = body.getJsonArray("subProtocols");
-                if (subs != null) {
-                    List<String> subProtocols = new ArrayList<>();
-                    for (int i = 0; i < subs.size(); i++) {
-                        subProtocols.add(subs.getString(i));
-                    }
-                    if (subProtocols.size() > 0) {
-                        result.setSubProtocols(subProtocols);
-                    }
-                }
-            } else if (result.getType() == OstRequestType.TCP) {
-                result.setServerName(body.getString("serverName"));
-                result.setHost(body.getString("host"));
-                result.setPort(body.getInteger("port"));
+
             }
             result.setUrl(url);
-            Boolean ssl = body.getBoolean("isSSL");
-            if (ssl != null && ssl) {
+            Boolean ssl = result.isSsl();
+            if (ssl) {
                 result.setSsl(ssl);
-                OstSslCertType sslType = OstSslCertType.valueOf(body.getString("cert"));
-                if (sslType == OstSslCertType.DEFAULT) {
-                    result.setCert(OstSslCertType.DEFAULT);
-                } else {
-                    if (body.getString("certKey") == null || "".equals(body.getString("certKey").trim()) || body.getString("certValue") == null || "".equals(body.getString("certValue").trim())) {
+                OstSslCertType sslType = OstSslCertType.valueOf(result.getCert());
+                if (sslType != OstSslCertType.DEFAULT) {
+
+                    if (StringUtil.isNullOrEmpty(result.getCertKey()) || StringUtil.isNullOrEmpty(result.getCertValue())) {
                         handler.handle(Future.failedFuture("如果不使用默认SSL证书,证书的key与value不能为空"));
                         return;
                     }
-                    result.setCertKey(body.getString("certKey"));
-                    result.setCertValue(body.getString("certValue"));
                 }
             }
-            if (body.getJsonArray("headers") != null) {
+            if (!result.getParameters().isEmpty()) {
+                UserParameter.resolve(result.getParameters());
+            }
+           /* if (body.getJsonArray("headers") != null) {
                 MultiMap header = MultiMap.caseInsensitiveMultiMap();
                 JsonArray th = body.getJsonArray("headers");
                 for (int i = 0; i < th.size(); i++) {
@@ -748,37 +745,20 @@ public class MainVerticle extends AbstractVerticle {
                 if (header.size() > 0) {
                     result.setHeaders(header);
                 }
-            }
-            if (body.getString("body") != null) {
-                result.setBody(Buffer.buffer(body.getString("body")));
-            }
-            int count = body.getInteger("count");
+            }*/
+
+            int count = result.getCount();
             if (count < 1) {
                 handler.handle(Future.failedFuture("无效的请求的总次数"));
                 return;
             }
-            result.setCount(count);
 
-            int average = body.getInteger("average");
+            int average = result.getAverage();
             if (average < 1) {
-                handler.handle(Future.failedFuture("无效的每次请求多数次"));
+                average = 1;
                 return;
             }
-            result.setAverage(average);
-            result.setThroughput(body.getInteger("throughput"));
-			/*Long interval = body.getLong("interval");
-			if (interval < 1) {
-				handler.handle(Future.failedFuture("无效的请求的间隔"));
-				return;
-			}*/
-            //result.setInterval(interval);
-            result.setPrintResInfo(body.getBoolean("printResInfo"));
-            result.setKeepAlive(body.getBoolean("keepAlive"));
-            result.setTimeout(body.getInteger("timeout"));
-            if (body.getBoolean("keepAlive")) {
-                int au = body.getInteger("poolSize");
-                result.setPoolSize(au);
-            }
+
             handler.handle(Future.succeededFuture(result));
         } catch (Exception e) {
             if (LOG.isDebugEnabled()) {

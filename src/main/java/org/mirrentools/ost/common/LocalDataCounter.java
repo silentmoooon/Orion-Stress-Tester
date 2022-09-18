@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class LocalDataCounter {
 	/** 计数器 */
 	private static Map<String, AtomicLong> COUNTER_MAP = new ConcurrentHashMap<>();
+	private static Map<String, Long> Start_TIME_MAP = new ConcurrentHashMap<>();
 
 	/**
 	 * 数量+1
@@ -25,6 +26,25 @@ public class LocalDataCounter {
 		AtomicLong count = COUNTER_MAP.computeIfAbsent(key, n -> new AtomicLong(0L));
 		long result = count.incrementAndGet();
 		return result;
+	}
+
+	public static void setCount(String key,long count) {
+		AtomicLong counter = COUNTER_MAP.computeIfAbsent(key, n -> new AtomicLong(0L));
+		counter.set(count);
+	}
+	public static void setStartTime(String optionsId,long time){
+		  Start_TIME_MAP.put(Constant.REQUEST_START_TIME_PREFIX+optionsId,time);
+		COUNTER_MAP.put(Constant.REQUEST_LAST_TIME_PREFIX + optionsId, new AtomicLong(time));
+	}
+	public static long getStartTime(String optionsId){
+		return Start_TIME_MAP.get(Constant.REQUEST_START_TIME_PREFIX+optionsId);
+	}
+
+	public static void setEndTime(String optionsId,long time){
+		Start_TIME_MAP.put(Constant.REQUEST_END_TIME_PREFIX+optionsId,time);
+	}
+	public static Long getEndTime(String optionsId){
+		return Start_TIME_MAP.get(Constant.REQUEST_END_TIME_PREFIX+optionsId);
 	}
 
 	/**
