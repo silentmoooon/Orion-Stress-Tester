@@ -1,0 +1,28 @@
+{
+  "id": null,
+  "type": "HTTP",
+  "host": null,
+  "port": 0,
+  "serverName": null,
+  "webSocketVersion": null,
+  "subProtocols": null,
+  "url": "http://127.0.0.1:8170",
+  "method": "GET",
+  "ssl": false,
+  "cert": "DEFAULT",
+  "certKey": null,
+  "certValue": null,
+  "headers": {},
+  "parameters": {
+    "orderNo": "0084${date.yyyyMMddHHmmssSSS}${random.num(11)}"
+  },
+  "body": "{\"reqDate\":\"${date.yyyyMMdd}\",\"orderNo\":\"${orderNo}\"}",
+  "count": 1000000,
+  "average": 0,
+  "interval": 0,
+  "printResInfo": false,
+  "keepAlive": true,
+  "poolSize": 50,
+  "timeout": null,
+  "throughput": 5000
+}

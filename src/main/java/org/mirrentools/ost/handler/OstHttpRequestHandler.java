@@ -4,11 +4,16 @@ import io.netty.util.internal.StringUtil;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
+import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpClient;
 import io.vertx.core.http.HttpClientRequest;
 import io.vertx.core.http.HttpClientResponse;
 import io.vertx.core.http.HttpMethod;
 import org.mirrentools.ost.model.OstRequestOptions;
+
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * HTTP请求处理器
@@ -27,8 +32,13 @@ public interface OstHttpRequestHandler {
     static void requestAbs(HttpClient httpClient, OstRequestOptions options, Handler<AsyncResult<HttpClientResponse>> handler) {
         try {
             String url = options.getUrl();
+            Map<String, String> userParameter = new HashMap<>();
+            LinkedHashMap<String, String> originParameters = options.getParameters();
+            if(!originParameters.isEmpty()){
+                userParameter = UserParameter.resolve(originParameters);
+            }
             if (url.contains("${") && url.contains("}") && url.indexOf("{$") < url.indexOf("}")) {
-                url = UserParameter.resolveExpression(url);
+                url = UserParameter.resolveExpression(url,userParameter);
             }
             HttpClientRequest request = httpClient.requestAbs(HttpMethod.valueOf(options.getMethod()), url);
             if (options.getTimeout() != null) {
@@ -40,14 +50,14 @@ public interface OstHttpRequestHandler {
             request.exceptionHandler(err -> handler.handle(Future.failedFuture(err)));
             request.handler(res -> handler.handle(Future.succeededFuture(res)));
             String body = options.getBody();
-           // System.out.println("body:"+body);
+            //System.out.println("body:("+body+")");
             if (!StringUtil.isNullOrEmpty(body)) {
                 if (body.contains("${") && body.contains("}") && body.indexOf("{$") < body.indexOf("}")) {
-                    UserParameter.resolveVariable(options.getParameters());
-                    body = UserParameter.resolveExpression(body);
-                    //System.out.println("body after:"+body);
+                    body = UserParameter.resolveExpression(body,userParameter);
+                    /*System.out.println("body after:("+body+")");
+                    System.out.println("\n");*/
                 }
-                request.end(body);
+                request.end(Buffer.buffer(body));
             } else {
                 request.end();
             }

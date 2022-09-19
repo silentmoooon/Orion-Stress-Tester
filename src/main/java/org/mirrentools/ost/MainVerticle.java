@@ -22,7 +22,6 @@ import org.mirrentools.ost.enums.OstSslCertType;
 import org.mirrentools.ost.handler.OstHttpRequestHandler;
 import org.mirrentools.ost.handler.OstTcpRequestHandler;
 import org.mirrentools.ost.handler.OstWebSocketRequestHandler;
-import org.mirrentools.ost.handler.UserParameter;
 import org.mirrentools.ost.model.OstRequestOptions;
 import org.mirrentools.ost.verticle.OstHttpVerticle;
 import org.mirrentools.ost.verticle.OstTcpVerticle;
@@ -84,6 +83,7 @@ public class MainVerticle extends AbstractVerticle {
     private int instances;
 
     static DateTimeFormatter dateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
+
     /**
      * IDE中启动的Main
      *
@@ -530,14 +530,14 @@ public class MainVerticle extends AbstractVerticle {
                 JsonObject jsonObject = jsonArray.getJsonObject(0);
                 Instant instant = Instant.ofEpochMilli(now);
                 String msg = "\n";
-                msg+= dateTimeFormatter.format(LocalDateTime.ofInstant(instant, ZoneId.systemDefault()));
+                msg += dateTimeFormatter.format(LocalDateTime.ofInstant(instant, ZoneId.systemDefault()));
                 msg = msg + "\t 距上次(开始)时间:" + (now - lastTime) / 1000 + "s\n";
               /*  System.out.println("now:"+now);
                 System.out.println("start:"+startTime);
                 System.out.println("last:"+lastTime);*/
-                msg += "本次tps: " + (endSum - lastCount) / ((now - lastTime) / 1000) + "/s\t总TPS:"+(endSum)/((now-startTime)/1000)+"/s\n";
+                msg += "本次tps: " + String.format("%.2f",((double)endSum - (double)lastCount) / ((now - lastTime)) * 1000) + "/s\t总TPS:" + String.format("%.2f",((double)endSum) / ((now - startTime)) * 1000) + "/s\n";
                 msg += "本次执行: " + (endSum - lastCount) + "\t 累计执行: " + endSum + "\t 累计成功: " + succeeded + "\t 累计失败: " + failed + " \n";
-                msg += "累计耗时: " + jsonObject.getDouble("totalTimeMs") + "ms\t 平均耗时: " + jsonObject.getDouble("meanMs") + "ms\t 最大耗时: " + jsonObject.getDouble("maxMs") + "ms";
+                msg += "累计耗时: " + String.format("%.4f",jsonObject.getDouble("totalTimeMs")) + "ms\t 平均耗时: " + String.format("%.4f",jsonObject.getDouble("meanMs")) + "ms\t 最大耗时: " + String.format("%.4f",jsonObject.getDouble("maxMs")) + "ms";
 
                /* if (LOG.isDebugEnabled()) {
                     LOG.debug("执行" + testName + "测试->完成-->结果:" + metrics);
@@ -739,9 +739,9 @@ public class MainVerticle extends AbstractVerticle {
                     }
                 }
             }
-            if (!result.getParameters().isEmpty()) {
+           /* if (!result.getParameters().isEmpty()) {
                 UserParameter.resolveConstant(result.getParameters());
-            }
+            }*/
            /* if (body.getJsonArray("headers") != null) {
                 MultiMap header = MultiMap.caseInsensitiveMultiMap();
                 JsonArray th = body.getJsonArray("headers");
