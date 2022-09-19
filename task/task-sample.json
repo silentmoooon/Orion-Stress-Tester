@@ -1,28 +1,33 @@
 {
-  "id": null,
   "type": "HTTP",
-  "host": null,
-  "port": 0,
-  "serverName": null,
-  "webSocketVersion": null,
-  "subProtocols": null,
+  # url，如果后面有参数,也可以使用变量
   "url": "http://127.0.0.1:8170",
   "method": "GET",
+  # 是否为https
   "ssl": false,
+  # https证书,一般默认即可
   "cert": "DEFAULT",
-  "certKey": null,
-  "certValue": null,
+  # http请求头
   "headers": {},
+  # 自定义参数
   "parameters": {
     "orderNo": "0084${date.yyyyMMddHHmmssSSS}${random.num(11)}"
   },
+  # requestBody
   "body": "{\"reqDate\":\"${date.yyyyMMdd}\",\"orderNo\":\"${orderNo}\"}",
+  # 发送请求总数
   "count": 1000000,
+  # 同时发起请求数据，积累N个请求再一起发送，不填或填0默认为1
   "average": 0,
+  # 请求间隔,暂时没用
   "interval": 0,
+  # 是否打印响应信息,暂时没用
   "printResInfo": false,
+  # 是否为长连接,如果为是,需要设置下面的连接池数量
   "keepAlive": true,
   "poolSize": 50,
+  # 超时时间 不填也行
   "timeout": null,
+  # 吞吐量,限制发送吞吐量
   "throughput": 5000
 }

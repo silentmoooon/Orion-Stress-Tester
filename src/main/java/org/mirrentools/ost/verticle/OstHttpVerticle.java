@@ -85,7 +85,7 @@ public class OstHttpVerticle extends AbstractVerticle {
                         int count = options.getCount();
                         int average = options.getAverage();
 
-                        for (int i = 1; i <= count; i++) {
+                        for (int i = 1; i <= count; i=i+average) {
 
                             int size = i;
                             vertx.executeBlocking(exec -> {

@@ -24,6 +24,7 @@ import org.mirrentools.ost.handler.OstTcpRequestHandler;
 import org.mirrentools.ost.handler.OstWebSocketRequestHandler;
 import org.mirrentools.ost.model.OstRequestOptions;
 import org.mirrentools.ost.verticle.OstHttpVerticle;
+import org.mirrentools.ost.verticle.OstJdbcVerticle;
 import org.mirrentools.ost.verticle.OstTcpVerticle;
 import org.mirrentools.ost.verticle.OstWebSocketVerticle;
 
@@ -354,7 +355,7 @@ public class MainVerticle extends AbstractVerticle {
         // 要启动的服务名称
         String verticleName;
         // 请求的总数量
-        long requestTotal;
+        long requestTotal ;
         if (OstRequestType.valueOf(options.getType()) == OstRequestType.TCP) {
             testName = "TCP";
             snapshotName = "vertx.net";
@@ -365,11 +366,23 @@ public class MainVerticle extends AbstractVerticle {
             snapshotName = "vertx.http";
             verticleName = OstWebSocketVerticle.class.getName();
             requestTotal = options.getCount();
-        } else {
+        } else if (OstRequestType.valueOf(options.getType()) == OstRequestType.HTTP) {
             testName = "HTTP";
             snapshotName = "vertx.http";
             verticleName = OstHttpVerticle.class.getName();
             requestTotal = (options.getCount());
+        } else if (OstRequestType.valueOf(options.getType()) == OstRequestType.JDBC) {
+            testName = "JDBC";
+            snapshotName = "vertx.JDBC";
+            verticleName = OstJdbcVerticle.class.getName();
+            requestTotal = (options.getCount());
+        } else {
+            LOG.error("错误的类型!");
+            if (socket != null && !socket.isClosed()) {
+                socket.writeTextMessage("错误的类型");
+                socket.close();
+            }
+            return;
         }
 
         MicrometerMetricsOptions metricsOptions = new MicrometerMetricsOptions().setEnabled(true);
@@ -471,11 +484,20 @@ public class MainVerticle extends AbstractVerticle {
             snapshotName = "vertx.http";
             verticleName = OstWebSocketVerticle.class.getName();
             requestTotal = options.getCount();
-        } else {
+        }  else if (OstRequestType.valueOf(options.getType()) == OstRequestType.HTTP) {
             testName = "HTTP";
             snapshotName = "vertx.http";
             verticleName = OstHttpVerticle.class.getName();
-            requestTotal = options.getCount();
+            requestTotal = (options.getCount());
+        } else if (OstRequestType.valueOf(options.getType()) == OstRequestType.JDBC) {
+            testName = "JDBC";
+            snapshotName = "vertx.JDBC";
+            verticleName = OstJdbcVerticle.class.getName();
+            requestTotal = (options.getCount());
+        } else {
+            System.out.println("错误的类型!");
+
+            return;
         }
 
         MicrometerMetricsOptions metricsOptions = new MicrometerMetricsOptions().setEnabled(true);
@@ -535,9 +557,9 @@ public class MainVerticle extends AbstractVerticle {
               /*  System.out.println("now:"+now);
                 System.out.println("start:"+startTime);
                 System.out.println("last:"+lastTime);*/
-                msg += "本次tps: " + String.format("%.2f",((double)endSum - (double)lastCount) / ((now - lastTime)) * 1000) + "/s\t总TPS:" + String.format("%.2f",((double)endSum) / ((now - startTime)) * 1000) + "/s\n";
+                msg += "本次tps: " + String.format("%.2f", ((double) endSum - (double) lastCount) / ((now - lastTime)) * 1000) + "/s\t总TPS:" + String.format("%.2f", ((double) endSum) / ((now - startTime)) * 1000) + "/s\n";
                 msg += "本次执行: " + (endSum - lastCount) + "\t 累计执行: " + endSum + "\t 累计成功: " + succeeded + "\t 累计失败: " + failed + " \n";
-                msg += "累计耗时: " + String.format("%.4f",jsonObject.getDouble("totalTimeMs")) + "ms\t 平均耗时: " + String.format("%.4f",jsonObject.getDouble("meanMs")) + "ms\t 最大耗时: " + String.format("%.4f",jsonObject.getDouble("maxMs")) + "ms";
+                msg += "累计耗时: " + String.format("%.4f", jsonObject.getDouble("totalTimeMs")) + "ms\t 平均耗时: " + String.format("%.4f", jsonObject.getDouble("meanMs")) + "ms\t 最大耗时: " + String.format("%.4f", jsonObject.getDouble("maxMs")) + "ms";
 
                /* if (LOG.isDebugEnabled()) {
                     LOG.debug("执行" + testName + "测试->完成-->结果:" + metrics);

@@ -14,11 +14,13 @@
   "certValue": null,
   "headers": {},
   "parameters": {
-    "orderNo": "0084${date.yyyyMMddHHmmssSSS}${random.num(11)}"
+    "OrderNo": "0084${date.yyyyMMddHHmmssSSS}${random.num(11)}",
+    "ReqDate": "${date.yyyyMMdd}",
+    "ReqDateTime": "${date.yyyyMMddHHmmss}"
   },
-  "body": "{\"reqDate\":\"${date.yyyyMMdd}\",\"orderNo\":\"${orderNo}\"}",
-  "count": 1000000,
-  "average": 0,
+  "body": "{\"orderNo\":\"${OrderNo}\",\"ReqDate\":\"${ReqDate}\"}",
+  "count": 10,
+  "average": 2,
   "interval": 0,
   "printResInfo": false,
   "keepAlive": true,

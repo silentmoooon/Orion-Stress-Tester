@@ -12,5 +12,6 @@ public enum OstRequestType {
 	/** WebSocket类型 */
 	WebSocket,
 	/** TCP类型 */
-	TCP;
+	TCP,
+	JDBC;
 }
