@@ -36,6 +36,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Set;
 
 /**
@@ -79,6 +83,7 @@ public class MainVerticle extends AbstractVerticle {
      */
     private int instances;
 
+    static DateTimeFormatter dateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
     /**
      * IDE中启动的Main
      *
@@ -523,9 +528,14 @@ public class MainVerticle extends AbstractVerticle {
                 JsonObject metrics = service.getMetricsSnapshot(snapshotName);
                 JsonArray jsonArray = metrics.getJsonArray("vertx.http.client.responseTime");
                 JsonObject jsonObject = jsonArray.getJsonObject(0);
+                Instant instant = Instant.ofEpochMilli(now);
                 String msg = "\n";
-                msg = msg + "本次执行时间:" + (now - lastTime) / 1000 + "s\n";
-                msg += "本次tps: " + (endSum - lastCount) / ((now - lastTime) / 1000) + "/s\t累计TPS:"+(endSum)/((now-startTime)/1000)+"/s\n";
+                msg+= dateTimeFormatter.format(LocalDateTime.ofInstant(instant, ZoneId.systemDefault()));
+                msg = msg + "\t 距上次(开始)时间:" + (now - lastTime) / 1000 + "s\n";
+              /*  System.out.println("now:"+now);
+                System.out.println("start:"+startTime);
+                System.out.println("last:"+lastTime);*/
+                msg += "本次tps: " + (endSum - lastCount) / ((now - lastTime) / 1000) + "/s\t总TPS:"+(endSum)/((now-startTime)/1000)+"/s\n";
                 msg += "本次执行: " + (endSum - lastCount) + "\t 累计执行: " + endSum + "\t 累计成功: " + succeeded + "\t 累计失败: " + failed + " \n";
                 msg += "累计耗时: " + jsonObject.getDouble("totalTimeMs") + "ms\t 平均耗时: " + jsonObject.getDouble("meanMs") + "ms\t 最大耗时: " + jsonObject.getDouble("maxMs") + "ms";
 
@@ -540,7 +550,6 @@ public class MainVerticle extends AbstractVerticle {
                 }
             });
         });
-
         newVertx.deployVerticle(verticleName, deployments, res -> {
             if (res.succeeded()) {
                 if (LOG.isDebugEnabled()) {
@@ -731,7 +740,7 @@ public class MainVerticle extends AbstractVerticle {
                 }
             }
             if (!result.getParameters().isEmpty()) {
-                UserParameter.resolve(result.getParameters());
+                UserParameter.resolveConstant(result.getParameters());
             }
            /* if (body.getJsonArray("headers") != null) {
                 MultiMap header = MultiMap.caseInsensitiveMultiMap();
@@ -755,8 +764,7 @@ public class MainVerticle extends AbstractVerticle {
 
             int average = result.getAverage();
             if (average < 1) {
-                average = 1;
-                return;
+                result.setAverage(1);
             }
 
             handler.handle(Future.succeededFuture(result));

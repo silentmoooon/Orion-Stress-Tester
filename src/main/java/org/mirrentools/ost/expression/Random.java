@@ -7,15 +7,14 @@ public class Random {
     static Snowflake snowflake = new Snowflake(1, 1);
 
     public static String serialId() {
-        System.out.println(snowflake.nextId());
         return snowflake.nextIdStr();
     }
 
-    public static String randomNum(int length) {
+    public static String num(int length) {
         return RandomUtil.randomNumbers(length);
     }
 
-    public static String random(int length) {
+    public static String string(int length) {
         return RandomUtil.randomString(length);
     }
 

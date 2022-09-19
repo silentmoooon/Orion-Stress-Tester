@@ -1,16 +1,28 @@
 {
+  "id": null,
   "type": "HTTP",
-  "url": "http://127.0.0.1:8000",
-  "count": 1000,
-  "average": 10,
-  "throughput": 5000,
-  "ssl": true,
-  "cert": "DEFAULT",
+  "host": null,
+  "port": 0,
+  "serverName": null,
+  "webSocketVersion": null,
+  "subProtocols": null,
+  "url": "http://127.0.0.1:8170",
   "method": "GET",
-  "body": "0084${date.yyyyMMddHHmmssSSS}${random.randomNum(11)}",
+  "ssl": false,
+  "cert": "DEFAULT",
+  "certKey": null,
+  "certValue": null,
+  "headers": {},
   "parameters": {
+    "orderNo": "0084${date.yyyyMMddHHmmssSSS}${random.num(11)}"
   },
+  "body": "{\"reqDate\":\"${date.yyyyMMdd}\",\"orderNo\":\"${orderNo}\"}",
+  "count": 1000000,
+  "average": 0,
+  "interval": 0,
+  "printResInfo": false,
   "keepAlive": true,
   "poolSize": 50,
-  "printResInfo": false
+  "timeout": null,
+  "throughput": 5000
 }

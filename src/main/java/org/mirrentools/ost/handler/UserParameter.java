@@ -2,19 +2,27 @@ package org.mirrentools.ost.handler;
 
 import org.mirrentools.ost.expression.Executor;
 
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class UserParameter {
-    static Map<String, String> userParameterMap = new HashMap<>();
+    static Map<String, String> userParameterMap = new ConcurrentHashMap<>();
 
-    public static void resolve(LinkedHashMap<String, String> params) {
+    public static void resolveConstant(LinkedHashMap<String, String> params) {
+        params.forEach((key, value) -> {
+            if (value.contains("${") && value.contains("}") && value.indexOf("{$") < value.indexOf("}")) {
+                //只有常量才能固定
+                //userParameterMap.put(key, resolveExpression(value));
+            } else {
+                userParameterMap.put(key, value);
+            }
+        });
+    }
+    public static void resolveVariable(LinkedHashMap<String, String> params) {
         params.forEach((key, value) -> {
             if (value.contains("${") && value.contains("}") && value.indexOf("{$") < value.indexOf("}")) {
                 userParameterMap.put(key, resolveExpression(value));
-            } else {
-                userParameterMap.put(key, value);
             }
         });
     }

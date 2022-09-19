@@ -40,9 +40,12 @@ public interface OstHttpRequestHandler {
             request.exceptionHandler(err -> handler.handle(Future.failedFuture(err)));
             request.handler(res -> handler.handle(Future.succeededFuture(res)));
             String body = options.getBody();
+           // System.out.println("body:"+body);
             if (!StringUtil.isNullOrEmpty(body)) {
                 if (body.contains("${") && body.contains("}") && body.indexOf("{$") < body.indexOf("}")) {
+                    UserParameter.resolveVariable(options.getParameters());
                     body = UserParameter.resolveExpression(body);
+                    //System.out.println("body after:"+body);
                 }
                 request.end(body);
             } else {

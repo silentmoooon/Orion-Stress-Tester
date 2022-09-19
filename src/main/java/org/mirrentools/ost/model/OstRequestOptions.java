@@ -1,5 +1,7 @@
 package org.mirrentools.ost.model;
 
+import io.vertx.core.json.Json;
+
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -403,14 +405,6 @@ public class OstRequestOptions {
 		return this;
 	}
 
-	/**
-	 * 获得需要请求的数量总数
-	 * 
-	 * @return
-	 */
-	public long getReuestCountSum() {
-		return getCount() ;
-	}
 
 	/**
 	 * 获取每次请求间隔
@@ -538,6 +532,34 @@ public class OstRequestOptions {
 				+ subProtocols + ", url=" + url + ", method=" + method + ", ssl=" + ssl + ", cert=" + cert + ", certKey=" + certKey + ", certValue=" + certValue + ", headers=" + headers + ", body=" + body
 				+ ", count=" + count + ", average=" + average + ", interval=" + interval + ", printResInfo=" + printResInfo + ", keepAlive=" + keepAlive + ", poolSize=" + poolSize + ", timeout=" + timeout
 				+ "]";
+	}
+
+	public static void main(String[] args) {
+
+		OstRequestOptions options = new OstRequestOptions();
+		options.setType("HTTP");
+		options.setMethod("GET");
+		options.setUrl("http://127.0.0.1:8170");
+		LinkedHashMap<String, String> paramters = new LinkedHashMap<>();
+		paramters.put("orderNo", "0084${date.yyyyMMddHHmmssSSS}${random.num(11)}");
+		options.setParameters(paramters);
+		options.setBody("{\"reqDate\":\"${date.yyyyMMdd}\",\"orderNo\":\"${orderNo}\"}");
+		//http是否keepAlive 以及保留的连接池数据
+		options.setKeepAlive(true);
+		options.setPoolSize(50);
+		//是否打印响应信息(暂时不会打印)
+		options.setPrintResInfo(false);
+		//请求总数量
+		options.setCount(1000000);
+		//同时发送数量,N个请求积累到一起发送,如果不设置默认为1,不设置也没关系
+		options.setAverage(0);
+		// 吞吐量
+		options.setThroughput(5000);
+		//是否为https
+		options.setSsl(false);
+		//https证书 一般为默认
+		options.setCert("DEFAULT");
+		System.out.println(Json.encode(options));
 	}
 
 }

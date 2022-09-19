@@ -92,19 +92,28 @@ public class OstHttpVerticle extends AbstractVerticle {
                                 if (rateLimiter != null) {
                                     rateLimiter.acquire(average);
                                 }
-                                for (int j = 1; j <= average; j++) {
+                                if (average == 1) {
                                     JsonObject message = new JsonObject();
                                     message.put("id", optionsId);
                                     message.put("count", size);
-                                    message.put("index", j);
+                                    message.put("index", 1);
                                     message.put("init", !options.isKeepAlive());
                                     vertx.eventBus().send(EventBusAddress.HTTP_TEST_HANDLER, message);
+                                }else {
+                                    for (int j = 1; j <= average; j++) {
+                                        JsonObject message = new JsonObject();
+                                        message.put("id", optionsId);
+                                        message.put("count", size);
+                                        message.put("index", j);
+                                        message.put("init", !options.isKeepAlive());
+                                        vertx.eventBus().send(EventBusAddress.HTTP_TEST_HANDLER, message);
+                                    }
                                 }
                                 OstResponseInfo proEnd = new OstResponseInfo();
                                 proEnd.setCount(size);
                                 writeMsg(proEnd, OstCommand.TEST_SUBMIT_PROGRESS, socket);
                                 exec.complete();
-                            }, end -> {
+                            },false, end -> {
                             });
                         }
                         if (LOG.isDebugEnabled()) {
