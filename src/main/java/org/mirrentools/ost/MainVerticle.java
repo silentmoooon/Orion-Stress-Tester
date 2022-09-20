@@ -1,30 +1,29 @@
 package org.mirrentools.ost;
 
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import com.google.common.util.concurrent.RateLimiter;
 import io.netty.util.internal.StringUtil;
 import io.vertx.core.*;
 import io.vertx.core.buffer.Buffer;
-import io.vertx.core.http.*;
+import io.vertx.core.http.HttpClient;
+import io.vertx.core.http.HttpClientOptions;
+import io.vertx.core.http.HttpMethod;
+import io.vertx.core.http.ServerWebSocket;
 import io.vertx.core.json.Json;
-import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.net.*;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.StaticHandler;
-import io.vertx.micrometer.MetricsService;
-import io.vertx.micrometer.MicrometerMetricsOptions;
 import org.mirrentools.ost.common.*;
 import org.mirrentools.ost.enums.OstCommand;
 import org.mirrentools.ost.enums.OstRequestType;
 import org.mirrentools.ost.enums.OstSslCertType;
-import org.mirrentools.ost.handler.OstHttpRequestHandler;
 import org.mirrentools.ost.handler.OstTcpRequestHandler;
 import org.mirrentools.ost.handler.OstWebSocketRequestHandler;
 import org.mirrentools.ost.model.OstRequestOptions;
+import org.mirrentools.ost.task.TaskBean;
 import org.mirrentools.ost.verticle.OstHttpVerticle;
-import org.mirrentools.ost.verticle.OstJdbcVerticle;
 import org.mirrentools.ost.verticle.OstTcpVerticle;
 import org.mirrentools.ost.verticle.OstWebSocketVerticle;
 
@@ -41,6 +40,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Set;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
  * <pre>
@@ -82,6 +82,10 @@ public class MainVerticle extends AbstractVerticle {
      * 实例的数量
      */
     private int instances;
+
+    public static ConcurrentLinkedQueue<TaskBean> TASK_QUEUE = new ConcurrentLinkedQueue<>();
+
+    public static RateLimiter rateLimiter = null;
 
     static DateTimeFormatter dateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
 
@@ -130,8 +134,7 @@ public class MainVerticle extends AbstractVerticle {
             }
             // 关闭或结束时清理请求
             Promise<String> clearRequest = Promise.promise();
-            clearRequest.future().setHandler(res -> {
-                String id = res.result();
+            clearRequest.future().onSuccess(id -> {
                 System.out.println("close:" + id);
                 LocalDataServerWebSocket.remove(id);
                 LocalDataRequestOptions.remove(id);
@@ -293,8 +296,6 @@ public class MainVerticle extends AbstractVerticle {
                 socket.writeTextMessage(result);
                 // 请求的id
                 String optionsId = socket.textHandlerID();
-                // 存储需要请求的数量
-                LocalDataCounter.newCounter(optionsId, options.getCount());
                 // 共享WebSocket
                 LocalDataServerWebSocket.put(optionsId, socket);
                 // 共享请求配置
@@ -324,8 +325,6 @@ public class MainVerticle extends AbstractVerticle {
                 String result = ResultFormat.success(OstCommand.BEFORE_REQUEST_TEST, 1);
                 // 请求的id
                 String optionsId = options.getId();
-                // 存储需要请求的数量
-                LocalDataCounter.newCounter(optionsId, (options.getCount()));
 
                 // 共享请求配置
                 LocalDataRequestOptions.put(optionsId, options);
@@ -355,7 +354,7 @@ public class MainVerticle extends AbstractVerticle {
         // 要启动的服务名称
         String verticleName;
         // 请求的总数量
-        long requestTotal ;
+        long requestTotal;
         if (OstRequestType.valueOf(options.getType()) == OstRequestType.TCP) {
             testName = "TCP";
             snapshotName = "vertx.net";
@@ -374,7 +373,7 @@ public class MainVerticle extends AbstractVerticle {
         } else if (OstRequestType.valueOf(options.getType()) == OstRequestType.JDBC) {
             testName = "JDBC";
             snapshotName = "vertx.JDBC";
-            verticleName = OstJdbcVerticle.class.getName();
+            verticleName = "OstJdbcVerticle.class.getName()";
             requestTotal = (options.getCount());
         } else {
             LOG.error("错误的类型!");
@@ -385,9 +384,8 @@ public class MainVerticle extends AbstractVerticle {
             return;
         }
 
-        MicrometerMetricsOptions metricsOptions = new MicrometerMetricsOptions().setEnabled(true);
-        metricsOptions.setMicrometerRegistry(new SimpleMeterRegistry());
-        VertxOptions vertxOptions = new VertxOptions().setMetricsOptions(metricsOptions);
+      
+        VertxOptions vertxOptions = new VertxOptions();
         vertxOptions.setBlockedThreadCheckInterval(1000 * 60 * 60);
         Vertx newVertx = Vertx.vertx(vertxOptions);
         newVertx.exceptionHandler(err -> {
@@ -413,15 +411,16 @@ public class MainVerticle extends AbstractVerticle {
         if (LOG.isDebugEnabled()) {
             LOG.debug("正在启动" + testName + "测试服务:" + deployments.toJson());
         }
+
         Promise<String> promise = Promise.promise();
-        promise.future().setHandler(h -> {
-            MetricsService service = MetricsService.create(newVertx);
+        promise.future().onSuccess(h -> {
+            //MetricsService service = MetricsService.create(newVertx);
             vertx.setPeriodic(5000, tid -> {
                 if (socket.isClosed()) {
                     vertx.cancelTimer(tid);
                     return;
                 }
-                JsonObject snapshot = service.getMetricsSnapshot(snapshotName);
+               /* JsonObject snapshot = service.getMetricsSnapshot(snapshotName);
                 long succeeded = LocalDataCounter.getCount(Constant.REQUEST_SUCCEEDED_PREFIX + options.getId());
                 long failed = LocalDataCounter.getCount(Constant.REQUEST_FAILED_PREFIX + options.getId());
                 long endSum = (succeeded + failed);
@@ -445,7 +444,7 @@ public class MainVerticle extends AbstractVerticle {
                     } else {
                         LOG.info("执行发送信息给客户端-->已请求数量: " + endSum + " / " + requestTotal);
                     }
-                });
+                });*/
             });
         });
 
@@ -484,7 +483,7 @@ public class MainVerticle extends AbstractVerticle {
             snapshotName = "vertx.http";
             verticleName = OstWebSocketVerticle.class.getName();
             requestTotal = options.getCount();
-        }  else if (OstRequestType.valueOf(options.getType()) == OstRequestType.HTTP) {
+        } else if (OstRequestType.valueOf(options.getType()) == OstRequestType.HTTP) {
             testName = "HTTP";
             snapshotName = "vertx.http";
             verticleName = OstHttpVerticle.class.getName();
@@ -492,7 +491,7 @@ public class MainVerticle extends AbstractVerticle {
         } else if (OstRequestType.valueOf(options.getType()) == OstRequestType.JDBC) {
             testName = "JDBC";
             snapshotName = "vertx.JDBC";
-            verticleName = OstJdbcVerticle.class.getName();
+            verticleName = "OstJdbcVerticle.class.getName()";
             requestTotal = (options.getCount());
         } else {
             System.out.println("错误的类型!");
@@ -500,10 +499,12 @@ public class MainVerticle extends AbstractVerticle {
             return;
         }
 
-        MicrometerMetricsOptions metricsOptions = new MicrometerMetricsOptions().setEnabled(true);
+       /* MicrometerMetricsOptions metricsOptions = new MicrometerMetricsOptions().setEnabled(true);
         metricsOptions.setMicrometerRegistry(new SimpleMeterRegistry());
         VertxOptions vertxOptions = new VertxOptions().setMetricsOptions(metricsOptions);
 
+        vertxOptions.setBlockedThreadCheckInterval(1000 * 60 * 60);*/
+        VertxOptions vertxOptions = new VertxOptions();
         vertxOptions.setBlockedThreadCheckInterval(1000 * 60 * 60);
         Vertx newVertx = Vertx.vertx(vertxOptions);
         newVertx.exceptionHandler(err -> {
@@ -524,32 +525,106 @@ public class MainVerticle extends AbstractVerticle {
         DeploymentOptions deployments = new DeploymentOptions();
         deployments.setInstances(instances);
         deployments.setConfig(config);
+        if (options.getCount() > instances * 10) {
+            int eachLoopCount = options.getCount() / (instances);
+            for (int i = 0; i < instances; i++) {
+                TaskBean taskBean = new TaskBean();
+                taskBean.setStartIndex(eachLoopCount * i + 1);
+                taskBean.setEndIndex(eachLoopCount * (i + 1));
+                if (i == instances - 1 && options.getCount() % (instances) > 0) {
+                    taskBean.setEndIndex(taskBean.getEndIndex() + options.getCount() % (instances));
+                }
+                TASK_QUEUE.offer(taskBean);
+            }
+        }else{
+            TaskBean taskBean = new TaskBean();
+            taskBean.setStartIndex(1);
+            taskBean.setEndIndex(options.getCount());
+            TASK_QUEUE.offer(taskBean);
+        }
+        if (options.getThroughput() != null && options.getThroughput() > 0) {
+            rateLimiter = RateLimiter.create(options.getThroughput());
+        }
+        if (options.isKeepAlive()) {
+            HttpClientOptions hOptions = new HttpClientOptions();
+            if (options.isSsl() && options.getCert() != null && OstSslCertType.valueOf(options.getCert()) != OstSslCertType.DEFAULT) {
+                if (OstSslCertType.PFX == OstSslCertType.valueOf(options.getCert())) {
+                    PfxOptions certOptions = new PfxOptions();
+                    certOptions.setPassword(options.getCertKey());
+                    certOptions.setValue(Buffer.buffer(options.getCertValue()));
+                    hOptions.setPfxKeyCertOptions(certOptions);
+                } else if (OstSslCertType.JKS == OstSslCertType.valueOf(options.getCert())) {
+                    JksOptions certOptions = new JksOptions();
+                    certOptions.setPassword(options.getCertKey());
+                    certOptions.setValue(Buffer.buffer(options.getCertValue()));
+                    hOptions.setKeyStoreOptions(certOptions);
+                } else {
+                    PemKeyCertOptions certOptions = new PemKeyCertOptions();
+                    certOptions.setKeyValue(Buffer.buffer(options.getCertKey()));
+                    certOptions.setCertValue(Buffer.buffer(options.getCertValue()));
+                    hOptions.setPemKeyCertOptions(certOptions);
+                }
+            }
+            hOptions.setMaxPoolSize(options.getPoolSize());
+
+            if (options.getTimeout() != null) {
+                hOptions.setConnectTimeout(options.getTimeout());
+            }
+            hOptions.setKeepAlive(options.isKeepAlive());
+            hOptions.setSsl(options.isSsl());
+            URL url = null;
+            try {
+                url = new URL(options.getUrl());
+            } catch (MalformedURLException e) {
+                throw new RuntimeException(e);
+            }
+
+            int port = url.getPort();
+            if (port == -1) {
+                if (options.isSsl()) {
+                    port = 443;
+                } else {
+                    port = 80;
+                }
+            }
+            options.setRequestUri(url.getFile());
+            options.setHost(url.getHost());
+            options.setPort(port);
+            hOptions.setDefaultPort(port);
+            hOptions.setDefaultHost(url.getHost());
+            HttpClient httpClient = vertx.createHttpClient(hOptions);
+            // 共享http客户端
+            LocalDataHttpClient.put(options.getId(), httpClient);
+        }
         if (LOG.isDebugEnabled()) {
             LOG.debug("正在启动" + testName + "测试服务:" + deployments.toJson());
         }
         Promise<String> promise = Promise.promise();
-        promise.future().setHandler(h -> {
-            MetricsService service = MetricsService.create(newVertx);
-            LocalDataCounter.setStartTime(options.getId(), System.currentTimeMillis());
 
+        promise.future().onSuccess(h -> {
+            //MetricsService service = MetricsService.create(newVertx);
             vertx.setPeriodic(5000, tid -> {
-
-                long succeeded = LocalDataCounter.getCount(Constant.REQUEST_SUCCEEDED_PREFIX + options.getId());
-                long failed = LocalDataCounter.getCount(Constant.REQUEST_FAILED_PREFIX + options.getId());
+                String optionId = options.getId();
+                long succeeded = LocalDataCounter.getCount(Constant.REQUEST_SUCCEEDED_PREFIX + optionId);
+                long failed = LocalDataCounter.getCount(Constant.REQUEST_FAILED_PREFIX + optionId);
                 long endSum = (succeeded + failed);
-                long lastCount = LocalDataCounter.getCount(Constant.REQUEST_LAST_COUNT_PREFIX + options.getId());
-                long lastTime = LocalDataCounter.getCount(Constant.REQUEST_LAST_TIME_PREFIX + options.getId());
-                long startTime = LocalDataCounter.getStartTime(options.getId());
+                long lastCount = LocalDataCounter.getCount(Constant.REQUEST_LAST_COUNT_PREFIX + optionId);
+                long lastTime = LocalDataCounter.getCount(Constant.REQUEST_LAST_TIME_PREFIX + optionId);
+                long startTime = LocalDataCounter.getStartTime(optionId);
+                long totalDelay = LocalDataCounter.getDelay(optionId);
+                long minDelay = LocalDataCounter.getMinDelay(optionId);
+                long maxDelay = LocalDataCounter.getMaxDelay(optionId);
                 //如果已经结束则取结束时间
-                Long now = LocalDataCounter.getEndTime(options.getId());
+                Long now = LocalDataCounter.getEndTime(optionId);
                 if (now == null) {
                     now = System.currentTimeMillis();
                 }
-                LocalDataCounter.setCount(Constant.REQUEST_LAST_COUNT_PREFIX + options.getId(), endSum);
-                LocalDataCounter.setCount(Constant.REQUEST_LAST_TIME_PREFIX + options.getId(), now);
-                JsonObject metrics = service.getMetricsSnapshot(snapshotName);
-                JsonArray jsonArray = metrics.getJsonArray("vertx.http.client.responseTime");
-                JsonObject jsonObject = jsonArray.getJsonObject(0);
+                LocalDataCounter.setCount(Constant.REQUEST_LAST_COUNT_PREFIX + optionId, endSum);
+                LocalDataCounter.setCount(Constant.REQUEST_LAST_TIME_PREFIX + optionId, now);
+                /*JsonObject metrics = service.getMetricsSnapshot(snapshotName);
+                System.out.println(metrics.toString());
+                JsonArray jsonArray = metrics.getJsonArray("vertx.http.client.response.time");
+                JsonObject jsonObject = jsonArray.getJsonObject(0);*/
                 Instant instant = Instant.ofEpochMilli(now);
                 String msg = "\n";
                 msg += dateTimeFormatter.format(LocalDateTime.ofInstant(instant, ZoneId.systemDefault()));
@@ -559,13 +634,14 @@ public class MainVerticle extends AbstractVerticle {
                 System.out.println("last:"+lastTime);*/
                 msg += "本次tps: " + String.format("%.2f", ((double) endSum - (double) lastCount) / ((now - lastTime)) * 1000) + "/s\t总TPS:" + String.format("%.2f", ((double) endSum) / ((now - startTime)) * 1000) + "/s\n";
                 msg += "本次执行: " + (endSum - lastCount) + "\t 累计执行: " + endSum + "\t 累计成功: " + succeeded + "\t 累计失败: " + failed + " \n";
-                msg += "累计耗时: " + String.format("%.4f", jsonObject.getDouble("totalTimeMs")) + "ms\t 平均耗时: " + String.format("%.4f", jsonObject.getDouble("meanMs")) + "ms\t 最大耗时: " + String.format("%.4f", jsonObject.getDouble("maxMs")) + "ms";
+                msg += "累计耗时: " + totalDelay + "ms\t 平均耗时: " + String.format("%.4f", (double) totalDelay / (double) endSum) + "ms\t 最大耗时: " + maxDelay  + "ms\t 最小耗时: " + minDelay + "ms";
 
                /* if (LOG.isDebugEnabled()) {
                     LOG.debug("执行" + testName + "测试->完成-->结果:" + metrics);
                 }*/
                 System.out.println(msg);
                 if (endSum >= requestTotal) {
+                    System.out.println("测试完成");
                     this.getVertx().close();
                     System.exit(0);
 
@@ -583,6 +659,7 @@ public class MainVerticle extends AbstractVerticle {
                 promise.fail("启动" + testName + "测试服务-->失败:");
             }
         });
+        LocalDataCounter.setStartTime(options.getId(), System.currentTimeMillis());
     }
 
 
@@ -620,7 +697,8 @@ public class MainVerticle extends AbstractVerticle {
                 if (LOG.isDebugEnabled()) {
                     LOG.debug("进行测试前请求正在检查HTTP后端服务是否可用...");
                 }
-                OstHttpRequestHandler.requestAbs(httpClient, options, res -> {
+                handler.handle(Future.succeededFuture());
+                /*OstHttpRequestHandler.requestAbs(httpClient, options, res -> {
                     if (res.succeeded()) {
                         HttpClientResponse result = res.result();
                         int code = result.statusCode();
@@ -639,7 +717,7 @@ public class MainVerticle extends AbstractVerticle {
                         }
                         handler.handle(Future.failedFuture("进行测试前请求检查失败:" + msg));
                     }
-                });
+                });*/
 
             } else if (type == OstRequestType.WebSocket) {
                 HttpClient httpClient = vertx.createHttpClient(hOptions);
@@ -797,5 +875,6 @@ public class MainVerticle extends AbstractVerticle {
             handler.handle(Future.failedFuture("缺少参数或存在无效的参数"));
         }
     }
+
 
 }

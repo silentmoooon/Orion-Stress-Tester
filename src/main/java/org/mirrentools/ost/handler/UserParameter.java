@@ -3,7 +3,6 @@ package org.mirrentools.ost.handler;
 import cn.hutool.core.util.StrUtil;
 import org.mirrentools.ost.expression.Executor;
 
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -11,24 +10,19 @@ import java.util.Map;
 public class UserParameter {
 
 
-    public static Map<String, String> resolve(LinkedHashMap<String, String> params) {
-        Map<String, String> result = new HashMap<>();
+    public static void resolve(LinkedHashMap<String, String> params, Map<String, String> userParameter) {
         params.forEach((key, value) -> {
             if (value.contains("${") && value.contains("}") && value.indexOf("{$") < value.indexOf("}")) {
-                result.put(key, resolveExpression(value, result));
+                userParameter.put(key, resolveExpression(value, userParameter));
             } else {
-                result.put(key, value);
+                userParameter.put(key, value);
             }
         });
-        return result;
     }
 
 
     public static String resolveExpression(String data, Map<String, String> parameterMap) {
-        /*boolean isJson = false;
-        if (data.startsWith("{") && data.endsWith("}")) {
-            isJson = true;
-        }*/
+
         data = data.trim();
         List<String> split = StrUtil.split(data, "}");
 
@@ -48,14 +42,17 @@ public class UserParameter {
                     //是变量,需要从userParameterMap取
                     value = parameterMap.get(expression);
                 }
-                if(value!=null) {
-                    str = str.replace("${" + expression + "}", value);
+                if (value == null) {
+                    value = "null";
                 }
+                str = str.replace("${" + expression + "}", value);
+                split.set(i, str);
             }
-            split.set(i, str);
+
         }
         String result = String.join("", split);
         if (result.contains("${") && result.contains("}") && result.indexOf("{$") < result.indexOf("}")) {
+            System.out.println(result);
             return resolveExpression(data, parameterMap);
         }
         return result;
@@ -64,11 +61,11 @@ public class UserParameter {
     public static void main(String[] args) {
         String aa = "{\"orderNo\":\"${OrderNo}\",\"ReqDate\":\"${ReqDate}\",\"params\":{\"reqdatetime\":\"${ReqDateTime}\",\"aa\":\"bb\"}}";
         for (String s : StrUtil.split(aa, "}")) {
-            System.out.println("("+s+")");
+            System.out.println("(" + s + ")");
         }
 
-        String bb="aa,";
-        System.out.println(StrUtil.split(bb,",").size());
+        String bb = "aa,";
+        System.out.println(StrUtil.split(bb, ",").size());
 
     }
 }

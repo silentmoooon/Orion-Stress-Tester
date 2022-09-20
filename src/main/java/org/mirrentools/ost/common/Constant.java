@@ -21,5 +21,8 @@ public interface Constant {
 	public final static String REQUEST_LAST_TIME_PREFIX = "request://lastTime";
 	public final static String REQUEST_START_TIME_PREFIX = "request://startTime";
 	public final static String REQUEST_END_TIME_PREFIX = "request://endTime";
+	public final static String REQUEST_MIN_DELAY_PREFIX = "request://minDelay";
+	public final static String REQUEST_MAX_DELAY_PREFIX = "request://maxDelay";
+	public final static String REQUEST_TOTAL_DELAY_PREFIX = "request://totalDelay";
 
 }

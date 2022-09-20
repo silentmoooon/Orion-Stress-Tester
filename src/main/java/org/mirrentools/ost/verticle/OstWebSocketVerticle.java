@@ -1,20 +1,5 @@
 package org.mirrentools.ost.verticle;
 
-import org.mirrentools.ost.MainVerticle;
-import org.mirrentools.ost.common.Constant;
-import org.mirrentools.ost.common.EventBusAddress;
-import org.mirrentools.ost.common.LocalDataBoolean;
-import org.mirrentools.ost.common.LocalDataCounter;
-import org.mirrentools.ost.common.LocalDataHttpClient;
-import org.mirrentools.ost.common.LocalDataRequestOptions;
-import org.mirrentools.ost.common.LocalDataServerWebSocket;
-import org.mirrentools.ost.common.ResultFormat;
-import org.mirrentools.ost.enums.OstCommand;
-import org.mirrentools.ost.enums.OstSslCertType;
-import org.mirrentools.ost.handler.OstWebSocketRequestHandler;
-import org.mirrentools.ost.model.OstRequestOptions;
-import org.mirrentools.ost.model.OstResponseInfo;
-
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
 import io.vertx.core.buffer.Buffer;
@@ -22,13 +7,18 @@ import io.vertx.core.eventbus.Message;
 import io.vertx.core.http.HttpClient;
 import io.vertx.core.http.HttpClientOptions;
 import io.vertx.core.http.ServerWebSocket;
-import io.vertx.core.http.WebSocket;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.net.JksOptions;
 import io.vertx.core.net.PemKeyCertOptions;
 import io.vertx.core.net.PfxOptions;
+import org.mirrentools.ost.MainVerticle;
+import org.mirrentools.ost.common.*;
+import org.mirrentools.ost.enums.OstCommand;
+import org.mirrentools.ost.enums.OstSslCertType;
+import org.mirrentools.ost.model.OstRequestOptions;
+import org.mirrentools.ost.model.OstResponseInfo;
 
 /**
  * 处理WebSocket请求的Verticle,创建时需要传入请求的optionsId(String):请求的id
@@ -82,7 +72,7 @@ public class OstWebSocketVerticle extends AbstractVerticle {
 					hOptions.setKeepAlive(options.isKeepAlive());
 					HttpClient httpClient = vertx.createHttpClient(hOptions);
 					// 共享http客户端
-					LocalDataHttpClient.put(optionsId, httpClient);
+					//LocalDataHttpClient.put(optionsId, httpClient);
 				}
 				vertx.executeBlocking(push -> {
 					try { // 发布测试任务
@@ -166,10 +156,10 @@ public class OstWebSocketVerticle extends AbstractVerticle {
 			}
 			httpClient = vertx.createHttpClient(hOptions);
 		} else {
-			httpClient = LocalDataHttpClient.get(id);
+			//httpClient = LocalDataHttpClient.get(id);
 		}
 
-		OstWebSocketRequestHandler.requestAbs(httpClient, options, res -> {
+		/*OstWebSocketRequestHandler.requestAbs(httpClient, options, res -> {
 			OstResponseInfo info = new OstResponseInfo();
 			info.setCount(count);
 			if (res.succeeded()) {
@@ -253,7 +243,7 @@ public class OstWebSocketVerticle extends AbstractVerticle {
 				info.setState(0);
 				writeMsg(info, OstCommand.TEST_LOG_RESPONSE, socket);
 			}
-		});
+		});*/
 	}
 
 	/**

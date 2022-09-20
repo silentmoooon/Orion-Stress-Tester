@@ -6,7 +6,7 @@
   "serverName": null,
   "webSocketVersion": null,
   "subProtocols": null,
-  "url": "http://127.0.0.1:8170",
+  "url": "http://127.0.0.1:8170/aaa?aaa=bbb",
   "method": "GET",
   "ssl": false,
   "cert": "DEFAULT",
@@ -16,15 +16,15 @@
   "parameters": {
     "OrderNo": "0084${date.yyyyMMddHHmmssSSS}${random.num(11)}",
     "ReqDate": "${date.yyyyMMdd}",
+    "aaa": "${date.yyyyMMdd}",
     "ReqDateTime": "${date.yyyyMMddHHmmss}"
   },
   "body": "{\"orderNo\":\"${OrderNo}\",\"ReqDate\":\"${ReqDate}\"}",
-  "count": 10,
-  "average": 2,
+  "count": 20,
+  "average": 1,
   "interval": 0,
   "printResInfo": false,
   "keepAlive": true,
-  "poolSize": 50,
-  "timeout": null,
-  "throughput": 5000
+  "poolSize": 200,
+  "timeout": null
 }

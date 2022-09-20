@@ -1,9 +1,12 @@
 package org.mirrentools.ost.common;
 
+import io.vertx.core.http.HttpClient;
+
+import java.net.MalformedURLException;
+import java.net.URISyntaxException;
+import java.net.URL;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-
-import io.vertx.core.http.HttpClient;
 
 /**
  * 本地HttpClient管理器
@@ -91,4 +94,10 @@ public class LocalDataHttpClient {
 		return HTTP_CLIENT_MAP.remove(key);
 	}
 
+	public static void main(String[] args) throws MalformedURLException, URISyntaxException {
+		URL url = new URL("https://www.baidu.com/aa/bb?aa=bb");
+		System.out.println(url.getFile());
+		System.out.println(url.getPath());
+		System.out.println(url.getPort());
+	}
 }

@@ -6,7 +6,6 @@ import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpClient;
-import io.vertx.core.http.HttpClientRequest;
 import io.vertx.core.http.HttpClientResponse;
 import io.vertx.core.http.HttpMethod;
 import org.mirrentools.ost.model.OstRequestOptions;
@@ -32,35 +31,37 @@ public interface OstJdbcRequestHandler {
     static void requestAbs(HttpClient httpClient, OstRequestOptions options, Handler<AsyncResult<HttpClientResponse>> handler) {
         try {
             String url = options.getUrl();
-            Map<String, String> userParameter = new HashMap<>();
+
+            final Map<String, String> userParameter = new HashMap<>();
             LinkedHashMap<String, String> originParameters = options.getParameters();
-            if(!originParameters.isEmpty()){
-                userParameter = UserParameter.resolve(originParameters);
+            if (!originParameters.isEmpty()) {
+                UserParameter.resolve(originParameters, userParameter);
             }
             if (url.contains("${") && url.contains("}") && url.indexOf("{$") < url.indexOf("}")) {
-                url = UserParameter.resolveExpression(url,userParameter);
+                url = UserParameter.resolveExpression(url, userParameter);
             }
-            HttpClientRequest request = httpClient.requestAbs(HttpMethod.valueOf(options.getMethod()), url);
-            if (options.getTimeout() != null) {
-                request.setTimeout(options.getTimeout());
-            }
-            if (options.getHeaders() != null) {
-                request.headers().addAll(options.getHeaders());
-            }
-            request.exceptionHandler(err -> handler.handle(Future.failedFuture(err)));
-            request.handler(res -> handler.handle(Future.succeededFuture(res)));
-            String body = options.getBody();
-            //System.out.println("body:("+body+")");
-            if (!StringUtil.isNullOrEmpty(body)) {
-                if (body.contains("${") && body.contains("}") && body.indexOf("{$") < body.indexOf("}")) {
-                    body = UserParameter.resolveExpression(body,userParameter);
+            httpClient.request(HttpMethod.valueOf(options.getMethod()), url).onSuccess(request -> {
+                if (options.getTimeout() != null) {
+                    request.setTimeout(options.getTimeout());
+                }
+                if (options.getHeaders() != null) {
+                    request.headers().addAll(options.getHeaders());
+                }
+                Future<HttpClientResponse> send;
+                String body = options.getBody();
+                //System.out.println("body:("+body+")");
+                if (!StringUtil.isNullOrEmpty(body)) {
+                    if (body.contains("${") && body.contains("}") && body.indexOf("{$") < body.indexOf("}")) {
+                        body = UserParameter.resolveExpression(body, userParameter);
                     /*System.out.println("body after:("+body+")");
                     System.out.println("\n");*/
+                    }
+                    send = request.send(Buffer.buffer(body));
+                } else {
+                    send = request.send();
                 }
-                request.end(Buffer.buffer(body));
-            } else {
-                request.end();
-            }
+                send.onSuccess(res -> handler.handle(Future.succeededFuture(res))).onFailure(err -> handler.handle(Future.failedFuture(err)));
+            });
         } catch (Exception e) {
             handler.handle(Future.failedFuture(e));
         }

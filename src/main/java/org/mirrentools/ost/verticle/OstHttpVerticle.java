@@ -1,6 +1,5 @@
 package org.mirrentools.ost.verticle;
 
-import com.google.common.util.concurrent.RateLimiter;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
 import io.vertx.core.buffer.Buffer;
@@ -21,6 +20,7 @@ import org.mirrentools.ost.enums.OstSslCertType;
 import org.mirrentools.ost.handler.OstHttpRequestHandler;
 import org.mirrentools.ost.model.OstRequestOptions;
 import org.mirrentools.ost.model.OstResponseInfo;
+import org.mirrentools.ost.task.TaskBean;
 
 /**
  * 处理HTTP请求的Verticle,创建时需要传入请求的optionsId(String):请求的id
@@ -32,7 +32,7 @@ public class OstHttpVerticle extends AbstractVerticle {
      * 日志
      */
     private final Logger LOG = LoggerFactory.getLogger(MainVerticle.class);
-    RateLimiter rateLimiter = null;
+
 
     @Override
     public void start(Promise<Void> startPromise) throws Exception {
@@ -41,90 +41,34 @@ public class OstHttpVerticle extends AbstractVerticle {
             vertx.eventBus().consumer(EventBusAddress.HTTP_TEST_HANDLER, this::httpTestHandler);
             String optionsId = config().getString("optionsId");
             OstRequestOptions options = LocalDataRequestOptions.get(optionsId);
-            if (options.getThroughput() != null && options.getThroughput() > 0) {
-                rateLimiter = RateLimiter.create(options.getThroughput());
-            }
+
             ServerWebSocket socket = LocalDataServerWebSocket.get(optionsId);
             Boolean created = LocalDataBoolean.putIfAbsent(optionsId, true);
-            if (created == null) {
+            TaskBean taskBean = MainVerticle.TASK_QUEUE.poll();
+            if (taskBean != null) {
+
                 if (LOG.isDebugEnabled()) {
                     LOG.debug("执行测试任务提交->" + deploymentID() + "-->进行发布任务!");
                 }
-                if (options.isKeepAlive()) {
-                    HttpClientOptions hOptions = new HttpClientOptions();
-                    if (options.getCert() != null && OstSslCertType.valueOf(options.getCert()) != OstSslCertType.DEFAULT) {
-                        if (OstSslCertType.PFX == OstSslCertType.valueOf(options.getCert())) {
-                            PfxOptions certOptions = new PfxOptions();
-                            certOptions.setPassword(options.getCertKey());
-                            certOptions.setValue(Buffer.buffer(options.getCertValue()));
-                            hOptions.setPfxKeyCertOptions(certOptions);
-                        } else if (OstSslCertType.JKS == OstSslCertType.valueOf(options.getCert())) {
-                            JksOptions certOptions = new JksOptions();
-                            certOptions.setPassword(options.getCertKey());
-                            certOptions.setValue(Buffer.buffer(options.getCertValue()));
-                            hOptions.setKeyStoreOptions(certOptions);
-                        } else {
-                            PemKeyCertOptions certOptions = new PemKeyCertOptions();
-                            certOptions.setKeyValue(Buffer.buffer(options.getCertKey()));
-                            certOptions.setCertValue(Buffer.buffer(options.getCertValue()));
-                            hOptions.setPemKeyCertOptions(certOptions);
-                        }
-                    }
-                    hOptions.setMaxPoolSize(options.getPoolSize());
 
-                    if (options.getTimeout() != null) {
-                        hOptions.setConnectTimeout(options.getTimeout());
-                    }
-                    hOptions.setKeepAlive(options.isKeepAlive());
-                    HttpClient httpClient = vertx.createHttpClient(hOptions);
-                    // 共享http客户端
-                    LocalDataHttpClient.put(optionsId, httpClient);
-                }
+
+                int count = taskBean.getEndIndex() - taskBean.getStartIndex() + 1;
+
                 vertx.executeBlocking(push -> {
-                    try { // 发布测试任务
-                        int count = options.getCount();
-                        int average = options.getAverage();
+                    for (long i = taskBean.getStartIndex(); i <= taskBean.getEndIndex(); i++) {
+                        long size = i;
+                        JsonObject message = new JsonObject();
+                        message.put("id", optionsId);
+                        message.put("count", size);
+                        message.put("index", 1);
+                        message.put("init", !options.isKeepAlive());
+                        vertx.eventBus().send(EventBusAddress.HTTP_TEST_HANDLER, message);
 
-                        for (int i = 1; i <= count; i=i+average) {
-
-                            int size = i;
-                            vertx.executeBlocking(exec -> {
-                                if (rateLimiter != null) {
-                                    rateLimiter.acquire(average);
-                                }
-                                if (average == 1) {
-                                    JsonObject message = new JsonObject();
-                                    message.put("id", optionsId);
-                                    message.put("count", size);
-                                    message.put("index", 1);
-                                    message.put("init", !options.isKeepAlive());
-                                    vertx.eventBus().send(EventBusAddress.HTTP_TEST_HANDLER, message);
-                                }else {
-                                    for (int j = 1; j <= average; j++) {
-                                        JsonObject message = new JsonObject();
-                                        message.put("id", optionsId);
-                                        message.put("count", size);
-                                        message.put("index", j);
-                                        message.put("init", !options.isKeepAlive());
-                                        vertx.eventBus().send(EventBusAddress.HTTP_TEST_HANDLER, message);
-                                    }
-                                }
-                                OstResponseInfo proEnd = new OstResponseInfo();
-                                proEnd.setCount(size);
-                                writeMsg(proEnd, OstCommand.TEST_SUBMIT_PROGRESS, socket);
-                                exec.complete();
-                            },false, end -> {
-                            });
-                        }
-                        if (LOG.isDebugEnabled()) {
-                            LOG.debug("执行测试任务提交-->成功!");
-                        }
-                        push.complete();
-                    } catch (Exception e) {
-                        push.fail(e);
-                        LOG.error("执行测试任务提交-->失败:", e);
                     }
-                }, startPromise);
+                    push.complete();
+                }, false, startPromise);
+
+
             } else {
                 startPromise.complete();
             }
@@ -140,6 +84,19 @@ public class OstHttpVerticle extends AbstractVerticle {
      * @param msg 接收参数JsonObject{id(String):请求id,count(int):第几批请求,index(int):第几次请求,init(boolean):是否创建客户端}
      */
     private void httpTestHandler(Message<JsonObject> msg) {
+        if (MainVerticle.rateLimiter != null) {
+            vertx.executeBlocking(event -> {
+                MainVerticle.rateLimiter.acquire(1);
+                send(msg);
+            }, false);
+
+        }else{
+            send(msg);
+        }
+
+    }
+
+    private void send(Message<JsonObject> msg){
         String id = msg.body().getString("id");
         int count = msg.body().getInteger("count");
         int index = msg.body().getInteger("index");
@@ -176,18 +133,21 @@ public class OstHttpVerticle extends AbstractVerticle {
             }
             hOptions.setMaxPoolSize(1);
             hOptions.setKeepAlive(false);
+            hOptions.setDefaultHost(options.getHost());
+            hOptions.setDefaultPort(options.getPort());
             httpClient = vertx.createHttpClient(hOptions);
         } else {
             httpClient = LocalDataHttpClient.get(id);
         }
-
-        OstHttpRequestHandler.requestAbs(httpClient, options, res -> {
-
+        long startTime = System.currentTimeMillis();
+        OstHttpRequestHandler.request(httpClient, options, res -> {
+            LocalDataCounter.setDelay(options.getId(), System.currentTimeMillis()-startTime);
             OstResponseInfo info = new OstResponseInfo();
             info.setCount(count);
             info.setIndex(index);
+            long totalCount=0;
             if (res.succeeded()) {
-                LocalDataCounter.incrementAndGet(Constant.REQUEST_SUCCEEDED_PREFIX + id);
+                totalCount=LocalDataCounter.incrementAndGetSuccessCount(id);
                 info.setState(1);
                 info.setCode(res.result().statusCode());
                 if (options.isPrintResInfo()) {
@@ -198,12 +158,14 @@ public class OstHttpVerticle extends AbstractVerticle {
                 }
             } else {
 
-                LocalDataCounter.incrementAndGet(Constant.REQUEST_FAILED_PREFIX + id);
+                totalCount=LocalDataCounter.incrementAndGetFailCount( id);
                 info.setBody(res.cause().getMessage());
                 info.setState(0);
-                writeMsg(info, OstCommand.TEST_LOG_RESPONSE, socket);
+                if (options.isPrintResInfo()) {
+                    writeMsg(info, OstCommand.TEST_LOG_RESPONSE, socket);
+                }
             }
-            if (count == LocalDataCounter.getCount(options.getId())) {
+            if (totalCount >= options.getCount()) {
                 LocalDataCounter.setEndTime(options.getId(), System.currentTimeMillis());
             }
         });
@@ -217,11 +179,12 @@ public class OstHttpVerticle extends AbstractVerticle {
      * @param socket
      */
     private void writeMsg(OstResponseInfo info, OstCommand command, ServerWebSocket socket) {
-        String result = ResultFormat.success(command, info.toJson());
         if (socket == null || socket.isClosed()) {
-            //System.out.println("msg:" + result);
+            System.out.println("msg:" + info.toString());
             return;
         }
+        String result = ResultFormat.success(command, info.toJson());
+
         socket.writeTextMessage(result);
     }
 

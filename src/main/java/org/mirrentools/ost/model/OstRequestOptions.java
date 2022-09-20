@@ -30,6 +30,11 @@ public class OstRequestOptions {
 	private List<String> subProtocols;
 	/** 请求的url */
 	private String url;
+
+	/**
+	 * 请求的uri
+	 */
+	private String requestUri;
 	/** http请求的method类型 {@link io.vertx.core.http.HttpMethod} */
 	private String method;
 	/** 是否使用SSL */
@@ -524,6 +529,14 @@ public class OstRequestOptions {
 	public OstRequestOptions setParameters(LinkedHashMap<String, String> parameters) {
 		this.parameters = parameters;
 		return this;
+	}
+
+	public String getRequestUri() {
+		return requestUri;
+	}
+
+	public void setRequestUri(String requestUri) {
+		this.requestUri = requestUri;
 	}
 
 	@Override
