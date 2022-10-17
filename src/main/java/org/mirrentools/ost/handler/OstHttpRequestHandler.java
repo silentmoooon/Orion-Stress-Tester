@@ -58,6 +58,7 @@ public interface OstHttpRequestHandler {
                         handler.handle(event);
                     });
                 } else {
+                    //long startTime = System.currentTimeMillis();
                     request.send().onComplete(event -> {
                         long endTime = System.currentTimeMillis();
                         LocalDataCounter.incrementSuccessAndGetCount(options.getId(), endTime, endTime - startTime);

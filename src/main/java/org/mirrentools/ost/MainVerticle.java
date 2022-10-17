@@ -639,14 +639,14 @@ public class MainVerticle extends AbstractVerticle {
                 System.out.println("last:"+lastTime);*/
                 msg += "本次tps: " + String.format("%.2f", ((double) endSum - (double) lastCount) / ((newestEndTime - lastTime)) * 1000) + "/s\t总TPS:" + String.format("%.2f", ((double) endSum) / ((newestEndTime - startTime)) * 1000) + "/s\n";
                 msg += "本次执行: " + (endSum - lastCount) + "\t 累计执行: " + endSum + "\t 累计成功: " + succeeded + "\t 累计失败: " + failed + " \n";
-                msg += "累计耗时: " + totalDelay + "ms\t 平均耗时: " + String.format("%.4f", (double) totalDelay / (double) endSum) + "ms\t 最大耗时: " + maxDelay + "ms\t 最小耗时: " + minDelay + "ms";
+                msg += "累计耗时: " + totalDelay + "ms\t 平均耗时: " + String.format("%.2f", (double) totalDelay / (double) endSum) + "ms\t 最大耗时: " + maxDelay + "ms\t 最小耗时: " + minDelay + "ms";
 
                /* if (LOG.isDebugEnabled()) {
                     LOG.debug("执行" + testName + "测试->完成-->结果:" + metrics);
                 }*/
                 System.out.println(msg);
                 if (endSum >= requestTotal) {
-                    System.out.println("测试完成");
+                    System.out.println("测试完成,用时:"+((newestEndTime - startTime)/1000)+"秒");
                     this.getVertx().close();
                     System.exit(0);
 
@@ -659,6 +659,7 @@ public class MainVerticle extends AbstractVerticle {
                 LOG.debug("启动" + testName + "测试服务-->成功!");
             }
             LocalDataCounter.setStartTime(options.getId(), System.currentTimeMillis());
+
             promise.complete();
         }).onFailure(event -> {
             LOG.error("启动" + testName + "测试服务-->失败:", event.getCause());

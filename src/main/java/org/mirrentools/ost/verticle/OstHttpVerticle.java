@@ -57,8 +57,6 @@ public class OstHttpVerticle extends AbstractVerticle {
                     LOG.debug("执行测试任务提交->" + deploymentID() + "-->进行发布任务!");
                 }
 
-
-                int count = taskBean.getEndIndex() - taskBean.getStartIndex() + 1;
                 vertx.setTimer(1, event -> {
 
                     for (long i = taskBean.getStartIndex(); i <= taskBean.getEndIndex(); i++) {
@@ -68,14 +66,9 @@ public class OstHttpVerticle extends AbstractVerticle {
                         message.put("index", 1);
                         message.put("init", !options.isKeepAlive());
                         if (MainVerticle.rateLimiter != null) {
-                            vertx.executeBlocking(event1 -> {
                                 MainVerticle.rateLimiter.acquire(1);
-                                send(message);
-
-                            }, false);
-                        } else {
-                            send(message);
                         }
+                        send(message);
                         //vertx.eventBus().send(EventBusAddress.HTTP_TEST_HANDLER, message);
 
                     }
