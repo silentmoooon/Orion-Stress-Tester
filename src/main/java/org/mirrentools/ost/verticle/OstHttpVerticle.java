@@ -1,7 +1,9 @@
 package org.mirrentools.ost.verticle;
 
 import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Context;
 import io.vertx.core.Promise;
+import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.Message;
 import io.vertx.core.http.HttpClient;
@@ -33,17 +35,21 @@ public class OstHttpVerticle extends AbstractVerticle {
      */
     private final Logger LOG = LoggerFactory.getLogger(MainVerticle.class);
 
+    @Override
+    public void init(Vertx vertx, Context context) {
+        super.init(vertx, context);
+
+    }
 
     @Override
     public void start(Promise<Void> startPromise) throws Exception {
         try {
             // 注册HTTP测试处理器
-            vertx.eventBus().consumer(EventBusAddress.HTTP_TEST_HANDLER, this::httpTestHandler);
+            //vertx.eventBus().consumer(EventBusAddress.HTTP_TEST_HANDLER, this::httpTestHandler);
             String optionsId = config().getString("optionsId");
             OstRequestOptions options = LocalDataRequestOptions.get(optionsId);
 
             ServerWebSocket socket = LocalDataServerWebSocket.get(optionsId);
-            Boolean created = LocalDataBoolean.putIfAbsent(optionsId, true);
             TaskBean taskBean = MainVerticle.TASK_QUEUE.poll();
             if (taskBean != null) {
 
@@ -53,22 +59,29 @@ public class OstHttpVerticle extends AbstractVerticle {
 
 
                 int count = taskBean.getEndIndex() - taskBean.getStartIndex() + 1;
+                vertx.setTimer(1, event -> {
 
-                vertx.executeBlocking(push -> {
                     for (long i = taskBean.getStartIndex(); i <= taskBean.getEndIndex(); i++) {
-                        long size = i;
                         JsonObject message = new JsonObject();
                         message.put("id", optionsId);
-                        message.put("count", size);
+                        message.put("count", i);
                         message.put("index", 1);
                         message.put("init", !options.isKeepAlive());
-                        vertx.eventBus().send(EventBusAddress.HTTP_TEST_HANDLER, message);
+                        if (MainVerticle.rateLimiter != null) {
+                            vertx.executeBlocking(event1 -> {
+                                MainVerticle.rateLimiter.acquire(1);
+                                send(message);
+
+                            }, false);
+                        } else {
+                            send(message);
+                        }
+                        //vertx.eventBus().send(EventBusAddress.HTTP_TEST_HANDLER, message);
 
                     }
-                    push.complete();
-                }, false, startPromise);
+                });
 
-
+                startPromise.complete();
             } else {
                 startPromise.complete();
             }
@@ -84,26 +97,28 @@ public class OstHttpVerticle extends AbstractVerticle {
      * @param msg 接收参数JsonObject{id(String):请求id,count(int):第几批请求,index(int):第几次请求,init(boolean):是否创建客户端}
      */
     private void httpTestHandler(Message<JsonObject> msg) {
-        if (MainVerticle.rateLimiter != null) {
+
+       /* if (MainVerticle.rateLimiter != null) {
             vertx.executeBlocking(event -> {
                 MainVerticle.rateLimiter.acquire(1);
+
                 send(msg);
             }, false);
 
-        }else{
+        } else {
             send(msg);
-        }
+        }*/
 
     }
 
-    private void send(Message<JsonObject> msg){
-        String id = msg.body().getString("id");
-        int count = msg.body().getInteger("count");
-        int index = msg.body().getInteger("index");
+    private void send(JsonObject msg) {
+        String id = msg.getString("id");
+        int count = msg.getInteger("count");
+        int index = msg.getInteger("index");
         /*if (LOG.isDebugEnabled()) {
             LOG.debug("Thread[" + Thread.currentThread().getId() + "] [" + count + "-" + index + "]处理器:" + deploymentID());
         }*/
-        boolean init = msg.body().getBoolean("init");
+        boolean init = msg.getBoolean("init");
         ServerWebSocket socket = LocalDataServerWebSocket.get(id);
 		/*if (socket == null || socket.isClosed()) {
 			return;
@@ -139,35 +154,25 @@ public class OstHttpVerticle extends AbstractVerticle {
         } else {
             httpClient = LocalDataHttpClient.get(id);
         }
-        long startTime = System.currentTimeMillis();
         OstHttpRequestHandler.request(httpClient, options, res -> {
-            LocalDataCounter.setDelay(options.getId(), System.currentTimeMillis()-startTime);
-            OstResponseInfo info = new OstResponseInfo();
-            info.setCount(count);
-            info.setIndex(index);
-            long totalCount=0;
-            if (res.succeeded()) {
-                totalCount=LocalDataCounter.incrementAndGetSuccessCount(id);
-                info.setState(1);
-                info.setCode(res.result().statusCode());
-                if (options.isPrintResInfo()) {
-                    res.result().bodyHandler(body -> {
-                        info.setBody(body.toString());
-                        writeMsg(info, OstCommand.TEST_LOG_RESPONSE, socket);
-                    });
-                }
-            } else {
 
-                totalCount=LocalDataCounter.incrementAndGetFailCount( id);
-                info.setBody(res.cause().getMessage());
-                info.setState(0);
-                if (options.isPrintResInfo()) {
-                    writeMsg(info, OstCommand.TEST_LOG_RESPONSE, socket);
+            if (options.isPrintResInfo()) {
+                OstResponseInfo info = new OstResponseInfo();
+                info.setCount(count);
+                info.setIndex(index);
+                if (res.succeeded()) {
+                    info.setState(1);
+                    info.setCode(res.result().statusCode());
+                } else {
+                    info.setBody(res.cause().getMessage());
+                    info.setState(0);
                 }
+                res.result().bodyHandler(body -> {
+                    info.setBody(body.toString());
+                    writeMsg(info, OstCommand.TEST_LOG_RESPONSE, socket);
+                });
             }
-            if (totalCount >= options.getCount()) {
-                LocalDataCounter.setEndTime(options.getId(), System.currentTimeMillis());
-            }
+
         });
     }
 

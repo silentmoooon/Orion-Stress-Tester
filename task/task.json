@@ -20,7 +20,7 @@
     "ReqDateTime": "${date.yyyyMMddHHmmss}"
   },
   "body": "{\"orderNo\":\"${OrderNo}\",\"ReqDate\":\"${ReqDate}\"}",
-  "count": 20,
+  "count": 500000,
   "average": 1,
   "interval": 0,
   "printResInfo": false,

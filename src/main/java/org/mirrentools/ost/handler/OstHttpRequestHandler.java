@@ -8,6 +8,7 @@ import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpClient;
 import io.vertx.core.http.HttpClientResponse;
 import io.vertx.core.http.HttpMethod;
+import org.mirrentools.ost.common.LocalDataCounter;
 import org.mirrentools.ost.model.OstRequestOptions;
 
 import java.util.HashMap;
@@ -51,11 +52,24 @@ public interface OstHttpRequestHandler {
                     if (body.contains("${") && body.contains("}") && body.indexOf("{$") < body.indexOf("}")) {
                         body = UserParameter.resolveExpression(body, userParameter);
                     }
-                    request.send(Buffer.buffer(body)).onComplete(handler);
+                    request.send(Buffer.buffer(body)).onComplete(event -> {
+                        long endTime = System.currentTimeMillis();
+                        LocalDataCounter.incrementSuccessAndGetCount(options.getId(), endTime, endTime - startTime);
+                        handler.handle(event);
+                    });
                 } else {
-                    request.send().onComplete(handler);
+                    request.send().onComplete(event -> {
+                        long endTime = System.currentTimeMillis();
+                        LocalDataCounter.incrementSuccessAndGetCount(options.getId(), endTime, endTime - startTime);
+                        handler.handle(event);
+                    });
                 }
-            }).onFailure(err -> handler.handle(Future.failedFuture(err)));
+            }).onFailure(err ->
+            {
+                long endTime = System.currentTimeMillis();
+                LocalDataCounter.incrementFailAndGetCount(options.getId(), endTime, endTime - startTime);
+                handler.handle(Future.failedFuture(err));
+            });
 
 
         } catch (Exception e) {

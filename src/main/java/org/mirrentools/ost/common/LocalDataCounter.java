@@ -3,7 +3,6 @@ package org.mirrentools.ost.common;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.LongAdder;
 
 /**
  * 本地计数器数据存储
@@ -15,8 +14,7 @@ public class LocalDataCounter {
      * 计数器
      */
     private static Map<String, AtomicLong> COUNTER_MAP = new ConcurrentHashMap<>();
-    private static Map<String, Long> Start_TIME_MAP = new ConcurrentHashMap<>();
-    private static LongAdder MIN_DELAY = new LongAdder();
+    private static Map<String, Long> TIME_MAP = new ConcurrentHashMap<>();
 
 
     /**
@@ -30,18 +28,20 @@ public class LocalDataCounter {
         long result = count.incrementAndGet();
         return result;
     }
-    public static long incrementAndGetSuccessCount(String optionId) {
+    public static long incrementSuccessAndGetCount(String optionId,long time,long delay) {
         AtomicLong count = COUNTER_MAP.computeIfAbsent(Constant.REQUEST_SUCCEEDED_PREFIX + optionId, n -> new AtomicLong(0L));
         long result = count.incrementAndGet();
         AtomicLong failCount = COUNTER_MAP.computeIfAbsent(Constant.REQUEST_FAILED_PREFIX + optionId, n -> new AtomicLong(0L));
-
+        TIME_MAP.put(Constant.REQUEST_END_TIME_PREFIX + optionId, time);
+        setDelay(optionId, delay);
         return result + failCount.get();
     }
-    public static long incrementAndGetFailCount(String optionId) {
+    public static long incrementFailAndGetCount(String optionId,long time,long delay) {
         AtomicLong count = COUNTER_MAP.computeIfAbsent(Constant.REQUEST_FAILED_PREFIX + optionId, n -> new AtomicLong(0L));
         long result = count.incrementAndGet();
         AtomicLong sucCount = COUNTER_MAP.computeIfAbsent(Constant.REQUEST_SUCCEEDED_PREFIX + optionId, n -> new AtomicLong(0L));
-
+        TIME_MAP.put(Constant.REQUEST_END_TIME_PREFIX + optionId, time);
+        setDelay(optionId, delay);
         return result + sucCount.get();
     }
 
@@ -52,20 +52,20 @@ public class LocalDataCounter {
     }
 
     public static void setStartTime(String optionsId, long time) {
-        Start_TIME_MAP.put(Constant.REQUEST_START_TIME_PREFIX + optionsId, time);
+        TIME_MAP.put(Constant.REQUEST_START_TIME_PREFIX + optionsId, time);
         COUNTER_MAP.put(Constant.REQUEST_LAST_TIME_PREFIX + optionsId, new AtomicLong(time));
     }
 
     public static long getStartTime(String optionsId) {
-        return Start_TIME_MAP.get(Constant.REQUEST_START_TIME_PREFIX + optionsId);
+        return TIME_MAP.get(Constant.REQUEST_START_TIME_PREFIX + optionsId);
     }
 
     public static void setEndTime(String optionsId, long time) {
-        Start_TIME_MAP.put(Constant.REQUEST_END_TIME_PREFIX + optionsId, time);
+        TIME_MAP.put(Constant.REQUEST_END_TIME_PREFIX + optionsId, time);
     }
 
     public static Long getEndTime(String optionsId) {
-        return Start_TIME_MAP.get(Constant.REQUEST_END_TIME_PREFIX + optionsId);
+        return TIME_MAP.get(Constant.REQUEST_END_TIME_PREFIX + optionsId);
     }
 
     public static void setDelay(String optionsId, long time) {
@@ -87,7 +87,7 @@ public class LocalDataCounter {
         }
     }
 
-    public static long getDelay(String optionsId) {
+    public static long getTotalDelay(String optionsId) {
         AtomicLong counter = COUNTER_MAP.computeIfAbsent(Constant.REQUEST_TOTAL_DELAY_PREFIX + optionsId, n -> new AtomicLong(0L));
         return counter.get();
     }

@@ -87,7 +87,7 @@ public class MainVerticle extends AbstractVerticle {
 
     public static RateLimiter rateLimiter = null;
 
-    static DateTimeFormatter dateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
+    static DateTimeFormatter dateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     /**
      * IDE中启动的Main
@@ -384,7 +384,7 @@ public class MainVerticle extends AbstractVerticle {
             return;
         }
 
-      
+
         VertxOptions vertxOptions = new VertxOptions();
         vertxOptions.setBlockedThreadCheckInterval(1000 * 60 * 60);
         Vertx newVertx = Vertx.vertx(vertxOptions);
@@ -506,6 +506,7 @@ public class MainVerticle extends AbstractVerticle {
         vertxOptions.setBlockedThreadCheckInterval(1000 * 60 * 60);*/
         VertxOptions vertxOptions = new VertxOptions();
         vertxOptions.setBlockedThreadCheckInterval(1000 * 60 * 60);
+        //vertxOptions.setWorkerPoolSize(32);
         Vertx newVertx = Vertx.vertx(vertxOptions);
         newVertx.exceptionHandler(err -> {
             if ("GC overhead limit exceeded".equals(err.getMessage())) {
@@ -536,7 +537,7 @@ public class MainVerticle extends AbstractVerticle {
                 }
                 TASK_QUEUE.offer(taskBean);
             }
-        }else{
+        } else {
             TaskBean taskBean = new TaskBean();
             taskBean.setStartIndex(1);
             taskBean.setEndIndex(options.getCount());
@@ -605,36 +606,40 @@ public class MainVerticle extends AbstractVerticle {
             //MetricsService service = MetricsService.create(newVertx);
             vertx.setPeriodic(5000, tid -> {
                 String optionId = options.getId();
+                Long newestEndTime = LocalDataCounter.getEndTime(optionId);
+                if (newestEndTime == null) {
+                    return;
+                }
+                long lastTime = LocalDataCounter.getCount(Constant.REQUEST_LAST_TIME_PREFIX + optionId);
+                if (newestEndTime == lastTime) {
+                    return;
+                }
+
+                LocalDataCounter.setCount(Constant.REQUEST_LAST_TIME_PREFIX + optionId, newestEndTime);
                 long succeeded = LocalDataCounter.getCount(Constant.REQUEST_SUCCEEDED_PREFIX + optionId);
                 long failed = LocalDataCounter.getCount(Constant.REQUEST_FAILED_PREFIX + optionId);
                 long endSum = (succeeded + failed);
                 long lastCount = LocalDataCounter.getCount(Constant.REQUEST_LAST_COUNT_PREFIX + optionId);
-                long lastTime = LocalDataCounter.getCount(Constant.REQUEST_LAST_TIME_PREFIX + optionId);
+
+
                 long startTime = LocalDataCounter.getStartTime(optionId);
-                long totalDelay = LocalDataCounter.getDelay(optionId);
+                long totalDelay = LocalDataCounter.getTotalDelay(optionId);
                 long minDelay = LocalDataCounter.getMinDelay(optionId);
                 long maxDelay = LocalDataCounter.getMaxDelay(optionId);
-                //如果已经结束则取结束时间
-                Long now = LocalDataCounter.getEndTime(optionId);
-                if (now == null) {
-                    now = System.currentTimeMillis();
-                }
+
                 LocalDataCounter.setCount(Constant.REQUEST_LAST_COUNT_PREFIX + optionId, endSum);
-                LocalDataCounter.setCount(Constant.REQUEST_LAST_TIME_PREFIX + optionId, now);
-                /*JsonObject metrics = service.getMetricsSnapshot(snapshotName);
-                System.out.println(metrics.toString());
-                JsonArray jsonArray = metrics.getJsonArray("vertx.http.client.response.time");
-                JsonObject jsonObject = jsonArray.getJsonObject(0);*/
-                Instant instant = Instant.ofEpochMilli(now);
+
+
+                Instant instant = Instant.ofEpochMilli(newestEndTime);
                 String msg = "\n";
                 msg += dateTimeFormatter.format(LocalDateTime.ofInstant(instant, ZoneId.systemDefault()));
-                msg = msg + "\t 距上次(开始)时间:" + (now - lastTime) / 1000 + "s\n";
+                msg = msg + "\t 距上次(开始)时间:" + (newestEndTime - lastTime) / 1000 + "s\n";
               /*  System.out.println("now:"+now);
                 System.out.println("start:"+startTime);
                 System.out.println("last:"+lastTime);*/
-                msg += "本次tps: " + String.format("%.2f", ((double) endSum - (double) lastCount) / ((now - lastTime)) * 1000) + "/s\t总TPS:" + String.format("%.2f", ((double) endSum) / ((now - startTime)) * 1000) + "/s\n";
+                msg += "本次tps: " + String.format("%.2f", ((double) endSum - (double) lastCount) / ((newestEndTime - lastTime)) * 1000) + "/s\t总TPS:" + String.format("%.2f", ((double) endSum) / ((newestEndTime - startTime)) * 1000) + "/s\n";
                 msg += "本次执行: " + (endSum - lastCount) + "\t 累计执行: " + endSum + "\t 累计成功: " + succeeded + "\t 累计失败: " + failed + " \n";
-                msg += "累计耗时: " + totalDelay + "ms\t 平均耗时: " + String.format("%.4f", (double) totalDelay / (double) endSum) + "ms\t 最大耗时: " + maxDelay  + "ms\t 最小耗时: " + minDelay + "ms";
+                msg += "累计耗时: " + totalDelay + "ms\t 平均耗时: " + String.format("%.4f", (double) totalDelay / (double) endSum) + "ms\t 最大耗时: " + maxDelay + "ms\t 最小耗时: " + minDelay + "ms";
 
                /* if (LOG.isDebugEnabled()) {
                     LOG.debug("执行" + testName + "测试->完成-->结果:" + metrics);
@@ -648,18 +653,18 @@ public class MainVerticle extends AbstractVerticle {
                 }
             });
         });
-        newVertx.deployVerticle(verticleName, deployments, res -> {
-            if (res.succeeded()) {
-                if (LOG.isDebugEnabled()) {
-                    LOG.debug("启动" + testName + "测试服务-->成功!");
-                }
-                promise.complete();
-            } else {
-                LOG.error("启动" + testName + "测试服务-->失败:", res.cause());
-                promise.fail("启动" + testName + "测试服务-->失败:");
+
+        newVertx.deployVerticle(verticleName, deployments).onSuccess(event -> {
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("启动" + testName + "测试服务-->成功!");
             }
+            LocalDataCounter.setStartTime(options.getId(), System.currentTimeMillis());
+            promise.complete();
+        }).onFailure(event -> {
+            LOG.error("启动" + testName + "测试服务-->失败:", event.getCause());
+            promise.fail("启动" + testName + "测试服务-->失败:");
         });
-        LocalDataCounter.setStartTime(options.getId(), System.currentTimeMillis());
+
     }
 
 
