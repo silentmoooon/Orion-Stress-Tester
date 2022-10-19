@@ -1,6 +1,7 @@
 package org.mirrentools.ost.handler;
 
 import cn.hutool.core.util.StrUtil;
+import org.apache.commons.lang3.StringUtils;
 import org.mirrentools.ost.expression.Executor;
 
 import java.util.LinkedHashMap;
@@ -45,7 +46,7 @@ public class UserParameter {
                 if (value == null) {
                     value = "null";
                 }
-                str = str.replace("${" + expression + "}", value);
+                str = StringUtils.replace(str, "${" + expression + "}", value);
                 split.set(i, str);
             }
 

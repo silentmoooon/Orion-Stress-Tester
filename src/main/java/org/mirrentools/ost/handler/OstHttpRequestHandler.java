@@ -8,7 +8,6 @@ import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpClient;
 import io.vertx.core.http.HttpClientResponse;
 import io.vertx.core.http.HttpMethod;
-import org.mirrentools.ost.common.LocalDataCounter;
 import org.mirrentools.ost.model.OstRequestOptions;
 
 import java.util.HashMap;
@@ -41,7 +40,6 @@ public interface OstHttpRequestHandler {
             if (requestUri.contains("${") && requestUri.contains("}") && requestUri.indexOf("{$") < requestUri.indexOf("}")) {
                 requestUri = UserParameter.resolveExpression(requestUri, userParameter);
             }
-            long startTime = System.currentTimeMillis();
             httpClient.request(HttpMethod.valueOf(options.getMethod()), requestUri).onSuccess(request -> {
 
                 if (options.getHeaders() != null) {
@@ -52,23 +50,12 @@ public interface OstHttpRequestHandler {
                     if (body.contains("${") && body.contains("}") && body.indexOf("{$") < body.indexOf("}")) {
                         body = UserParameter.resolveExpression(body, userParameter);
                     }
-                    request.send(Buffer.buffer(body)).onComplete(event -> {
-                        long endTime = System.currentTimeMillis();
-                        LocalDataCounter.incrementSuccessAndGetCount(options.getId(), endTime, endTime - startTime);
-                        handler.handle(event);
-                    });
+                    request.send(Buffer.buffer(body)).onComplete(handler);
                 } else {
-                    //long startTime = System.currentTimeMillis();
-                    request.send().onComplete(event -> {
-                        long endTime = System.currentTimeMillis();
-                        LocalDataCounter.incrementSuccessAndGetCount(options.getId(), endTime, endTime - startTime);
-                        handler.handle(event);
-                    });
+                    request.send().onComplete(handler);
                 }
             }).onFailure(err ->
             {
-                long endTime = System.currentTimeMillis();
-                LocalDataCounter.incrementFailAndGetCount(options.getId(), endTime, endTime - startTime);
                 handler.handle(Future.failedFuture(err));
             });
 

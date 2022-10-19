@@ -1,9 +1,7 @@
 package org.mirrentools.ost.verticle;
 
 import io.vertx.core.AbstractVerticle;
-import io.vertx.core.Context;
 import io.vertx.core.Promise;
-import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.Message;
 import io.vertx.core.http.HttpClient;
@@ -35,11 +33,6 @@ public class OstHttpVerticle extends AbstractVerticle {
      */
     private final Logger LOG = LoggerFactory.getLogger(MainVerticle.class);
 
-    @Override
-    public void init(Vertx vertx, Context context) {
-        super.init(vertx, context);
-
-    }
 
     @Override
     public void start(Promise<Void> startPromise) throws Exception {
@@ -50,34 +43,41 @@ public class OstHttpVerticle extends AbstractVerticle {
             OstRequestOptions options = LocalDataRequestOptions.get(optionsId);
 
             ServerWebSocket socket = LocalDataServerWebSocket.get(optionsId);
-            TaskBean taskBean = MainVerticle.TASK_QUEUE.poll();
-            if (taskBean != null) {
 
-                if (LOG.isDebugEnabled()) {
-                    LOG.debug("执行测试任务提交->" + deploymentID() + "-->进行发布任务!");
+
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("执行测试任务提交->" + deploymentID() + "-->进行发布任务!");
+            }
+            vertx.setTimer(1, event -> {
+                TaskBean taskBean = MainVerticle.TASK_QUEUE.poll();
+                if (taskBean == null) {
+                    return;
+                }
+                for (long i = taskBean.getStartIndex(); i <= taskBean.getEndIndex(); i++) {
+                    JsonObject message = new JsonObject();
+                    message.put("id", optionsId);
+                    message.put("count", i);
+                    message.put("index", 1);
+                    message.put("init", !options.isKeepAlive());
+                    if (MainVerticle.rateLimiter != null) {
+                        vertx.executeBlocking(event1 -> {
+                            MainVerticle.rateLimiter.acquire(1);
+                            event1.complete();
+                        }, false).onComplete(event1 -> {
+                            send(message);
+                        });
+
+                    } else {
+                        send(message);
+                    }
+
+
                 }
 
-                vertx.setTimer(1, event -> {
+            });
 
-                    for (long i = taskBean.getStartIndex(); i <= taskBean.getEndIndex(); i++) {
-                        JsonObject message = new JsonObject();
-                        message.put("id", optionsId);
-                        message.put("count", i);
-                        message.put("index", 1);
-                        message.put("init", !options.isKeepAlive());
-                        if (MainVerticle.rateLimiter != null) {
-                                MainVerticle.rateLimiter.acquire(1);
-                        }
-                        send(message);
-                        //vertx.eventBus().send(EventBusAddress.HTTP_TEST_HANDLER, message);
 
-                    }
-                });
-
-                startPromise.complete();
-            } else {
-                startPromise.complete();
-            }
+            startPromise.complete();
         } catch (Exception e) {
             LOG.error("执行初始化HTTP测试Verticle-->失败:", e);
             startPromise.fail(e);
@@ -147,8 +147,15 @@ public class OstHttpVerticle extends AbstractVerticle {
         } else {
             httpClient = LocalDataHttpClient.get(id);
         }
+        long startTime = System.currentTimeMillis();
         OstHttpRequestHandler.request(httpClient, options, res -> {
 
+            long endTime = System.currentTimeMillis();
+            JsonObject message = new JsonObject();
+            message.put("endTime", endTime);
+            message.put("delay", endTime - startTime);
+            message.put("status", res.succeeded());
+            vertx.eventBus().send(EventBusAddress.TEST_METRICS_HANDLER, message);
             if (options.isPrintResInfo()) {
                 OstResponseInfo info = new OstResponseInfo();
                 info.setCount(count);
@@ -156,14 +163,16 @@ public class OstHttpVerticle extends AbstractVerticle {
                 if (res.succeeded()) {
                     info.setState(1);
                     info.setCode(res.result().statusCode());
+                    res.result().bodyHandler(body -> {
+                        info.setBody(body.toString());
+                        writeMsg(info, OstCommand.TEST_LOG_RESPONSE, socket);
+                    });
                 } else {
                     info.setBody(res.cause().getMessage());
                     info.setState(0);
-                }
-                res.result().bodyHandler(body -> {
-                    info.setBody(body.toString());
                     writeMsg(info, OstCommand.TEST_LOG_RESPONSE, socket);
-                });
+                }
+
             }
 
         });

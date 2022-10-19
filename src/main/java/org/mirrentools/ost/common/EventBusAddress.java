@@ -20,4 +20,6 @@ public interface EventBusAddress {
 	 */
 	public final static String TCP_TEST_HANDLER = "submit.test//TCP";
 
+	public final static String TEST_METRICS_HANDLER = "test.metrics.msg";
+
 }
